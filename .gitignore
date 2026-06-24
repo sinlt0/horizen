@@ -1,0 +1,18 @@
+# Credentials & Configuration
+.env
+
+# Requested Ignore Directories
+GEMINI.md
+scripts/
+ss/
+data/
+inspa/
+__pycache__/
+
+# Logs (Keeps your repo clean)
+logs/
+logs.txt
+
+# Additional Bot Data & Backups
+lust/
+*.zip

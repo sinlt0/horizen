@@ -1,0 +1,27 @@
+# Social category emojis
+EMOJIS = {
+    "hug": "🤗",
+    "kiss": "💋",
+    "slap": "🖐️",
+    "pat": "💆",
+    "cuddle": "🫂",
+    "poke": "👈",
+    "tickle": "🤭",
+    "feed": "🍲",
+    "wave": "👋",
+    "blush": "😊",
+    "smile": "😄",
+    "wink": "😉",
+    "dance": "💃",
+    "cry": "😢",
+    "handhold": "🤝",
+    "punch": "👊",
+    "stare": "👀",
+    "highfive": "🙌",
+    "laugh": "😆",
+    "pout": "😤",
+    "shrug": "🤷",
+    "sleep": "😴",
+    "yeet": "☄️",
+    "bored": "😑"
+}

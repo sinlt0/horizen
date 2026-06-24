@@ -1,0 +1,30 @@
+{
+    "Owner": [
+        {
+            "name": "Eva",
+            "username": "sinlt",
+            "role": "Project Owner",
+            "id": "1181137505505001544",
+            "avatarurl": "https://cdn.discordapp.com/avatars/1181137505505001544/f744ad4469a9d45379e9192c4dba8a42.webp?size=1024"
+        }
+    ],
+    "Developers": [
+        {
+            "name": "Miwu",
+            "username": "f_mist",
+            "role": "Lead Developer",
+            "id": "1304319156035780678",
+            "avatarurl": "https://cdn.discordapp.com/avatars/1304319156035780678/452a085a278a4903526273a5ddaef154.webp?size=1024"
+        },
+        {
+            "name": "YZ",
+            "username": ".7yml",
+            "role": "Backend Engineer",
+            "id": "1298562460625666063",
+            "avatarurl": "https://cdn.discordapp.com/avatars/1298562460625666063/fda23a6a60a49d40126a04024ee38dcd.webp?size=1024"
+        }
+    ],
+    "Contributors": [],
+    "Managers": [],
+    "Early Supporters": []
+}

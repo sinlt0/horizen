@@ -1,0 +1,22 @@
+EMOJIS = {
+    'server': '📁',
+    "user": "👤",
+    "bot": "🤖",
+    'id': '🆔',
+    "owner": "👑",
+    'members': '👥',
+    'channels': '📑',
+    'roles': '🛡️',
+    "boost": "🚀",
+    'created': '📅',
+    'joined': '📥',
+    'permissions': '🔑',
+    'badges': '🏅',
+    'presence': '🌐',
+    'uptime': '⏰',
+    'commands': '⌨️',
+    'database': '🗄️',
+    "ping": "🏓",
+    'memory': '🧠',
+    'shard': '💎'
+}
