@@ -221,7 +221,6 @@ class Leveling(commands.Cog):
         config = await self.get_config(ctx.guild.id)
         multis = config.get('multi_users', {})
         
-        # Combined limit check for free
         total_multis = len(multis) + len(config.get('multi_roles', {})) + len(config.get('multi_channels', {}))
         if not is_p and total_multis >= 5:
             return await ctx.error("You have reached the multiplier limit (5 for Free).")
@@ -434,12 +433,9 @@ class Leveling(commands.Cog):
         self._cooldowns[uid] = now
 
         gain = random.randint(15, 25)
-        # Global Difficulty
         diff = config.get('difficulty', 1.0)
         gain = int(gain * diff)
 
-        # Multiplier Logic: Stack across different types
-        # (Highest Role Multi) * (Channel Multi) * (User Multi)
         role_multis = [1.0]
         r_m_config = config.get('multi_roles', {})
         user_role_ids = [str(r.id) for r in message.author.roles]
@@ -452,16 +448,13 @@ class Leveling(commands.Cog):
         channel_multi = float(config.get('multi_channels', {}).get(str(message.channel.id), 1.0))
         user_multi = float(config.get('multi_users', {}).get(str(message.author.id), 1.0))
         
-        # Bot Owner Perk: 10x XP across all servers
         owner_multi = 1.0
         if await self.bot.is_owner(message.author):
             owner_multi = 10.0
             
-        # Calculate stacked multiplier
         total_multiplier = final_role_multi * channel_multi * user_multi * owner_multi
         gain = int(gain * total_multiplier)
         
-        # Safety caps
         if gain > 1000: gain = 1000 # Increased cap for stacked multis
         if gain < 1: gain = 1
 
@@ -470,8 +463,9 @@ class Leveling(commands.Cog):
         nx_lvl, _ = self._get_level_from_xp(nx_xp)
         await self.db.update_one('users_xp', {'_id': uid}, {'$set': {'xp': nx_xp, 'level': nx_lvl, 'last_xp': now, 'guild_id': message.guild.id, 'user_id': message.author.id}}, upsert=True)
         if nx_lvl > data.get('level', 0):
-            cont, emb = await self._handle_level_up(message.author, nx_lvl, data.get('level', 0), nx_xp)
-            if config.get('notify_type', 'channel') == 'channel':
+            result = await self._handle_level_up(message.author, nx_lvl, data.get('level', 0), nx_xp)
+            if result and config.get('notify_type', 'channel') == 'channel':
+                cont, emb = result
                 try: await message.channel.send(content=cont, embed=emb)
                 except: pass
 

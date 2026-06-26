@@ -56,7 +56,6 @@ class TicketModal(discord.ui.Modal):
             if role:
                 overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
 
-        # Add global staff roles
         config = await self.bot.db_manager.find_one('ticket_config', {'_id': guild.id})
         if config and 'staff_roles' in config:
             for role_id in config['staff_roles']:
@@ -212,7 +211,6 @@ class TicketControlView(discord.ui.View):
         if not ticket:
             return await interaction.response.send_message("This channel is not an active ticket.", ephemeral=True)
 
-        # Fetch panel roles
         panel_roles = []
         config = await self.bot.db_manager.find_one('ticket_config', {'_id': interaction.guild.id})
         if config:
@@ -226,7 +224,6 @@ class TicketControlView(discord.ui.View):
         if ticket.get('claimed_by'):
             return await interaction.response.send_message(f"This ticket is already claimed by <@{ticket['claimed_by']}>.", ephemeral=True)
 
-        # Atomic check-and-set using database update filter would be better, but we check here for now.
         await self.bot.db_manager.update_one('active_tickets', {'_id': interaction.channel.id}, {'claimed_by': interaction.user.id})
         
         try:
@@ -235,7 +232,6 @@ class TicketControlView(discord.ui.View):
             await interaction.channel.edit(name=new_name)
         except: pass
 
-        # Update Welcome Message to disable claim button
         try:
             if ticket.get('welcome_msg_id'):
                 msg = await interaction.channel.fetch_message(ticket['welcome_msg_id'])
@@ -256,7 +252,6 @@ class TicketControlView(discord.ui.View):
         if not ticket:
             return await interaction.response.send_message("This channel is not an active ticket.", ephemeral=True)
 
-        # Fetch panel roles
         panel_roles = []
         config = await self.bot.db_manager.find_one('ticket_config', {'_id': interaction.guild.id})
         if config:
@@ -422,7 +417,6 @@ class Tickets(commands.Cog):
         if not found: return await ctx.error("Panel ID not found.")
 
         await self.bot.db_manager.update_one('ticket_config', {'_id': ctx.guild.id}, {'panels': panels})
-        if ctx.guild.id in self._config_cache: del self._config_cache[ctx.guild.id]
         await ctx.success(f"Category for panel `{panel_id}` has been updated to **{category.name}**.")
 
     @ticket_group.group(name='type', invoke_without_command=True, help='Manage ticket types/categories within a panel.')
@@ -456,9 +450,7 @@ class Tickets(commands.Cog):
         
         panel['categories'].append(new_cat)
         await self.bot.db_manager.update_one('ticket_config', {'_id': ctx.guild.id}, {'panels': panels})
-        if ctx.guild.id in self._config_cache: del self._config_cache[ctx.guild.id]
         
-        # Update the panel message to reflect changes
         target_channel = ctx.guild.get_channel(panel['channel_id'])
         if target_channel:
             try:
@@ -483,9 +475,7 @@ class Tickets(commands.Cog):
         panel['categories'] = [c for c in panel['categories'] if c['id'] != type_id]
         
         await self.bot.db_manager.update_one('ticket_config', {'_id': ctx.guild.id}, {'panels': panels})
-        if ctx.guild.id in self._config_cache: del self._config_cache[ctx.guild.id]
         
-        # Update the panel message
         target_channel = ctx.guild.get_channel(panel['channel_id'])
         if target_channel:
             try:
@@ -494,7 +484,6 @@ class Tickets(commands.Cog):
             except: pass
             
         await ctx.success(f"Ticket type removed from panel `{panel_id}`.")
-
 
     @ticket_group.command(name='setup', help='Launch the ticket panel setup wizard.')
     @commands.has_permissions(administrator=True)
@@ -559,7 +548,6 @@ class Tickets(commands.Cog):
         }
 
         if use_multi:
-            # Add the first category automatically
             panel_data['categories'].append({
                 'id': str(uuid.uuid4())[:8],
                 'name': 'General Support',
@@ -577,7 +565,6 @@ class Tickets(commands.Cog):
         panel_data['message_id'] = panel_msg.id
 
         await self.bot.db_manager.update_one('ticket_config', {'_id': ctx.guild.id}, {'$push': {'panels': panel_data}}, upsert=True)
-        if ctx.guild.id in self._config_cache: del self._config_cache[ctx.guild.id]
         await ctx.success(f"Ticket panel **{name}** has been setup in {target_channel.mention}!")
 
     @ticket_group.command(name='delete', help='Delete a ticket panel.')
@@ -593,21 +580,18 @@ class Tickets(commands.Cog):
             return await ctx.error("Panel ID not found.")
 
         await self.bot.db_manager.update_one('ticket_config', {'_id': ctx.guild.id}, {'panels': new_panels})
-        if ctx.guild.id in self._config_cache: del self._config_cache[ctx.guild.id]
         await ctx.success(f"Panel `{panel_id}` has been deleted.")
 
     @ticket_group.command(name='blacklist', help='Blacklist a user from opening tickets.')
     @commands.has_permissions(administrator=True)
     async def ticket_blacklist(self, ctx, user: discord.Member):
         await self.bot.db_manager.update_one('ticket_config', {'_id': ctx.guild.id}, {'$addToSet': {'blacklist': user.id}}, upsert=True)
-        if ctx.guild.id in self._config_cache: del self._config_cache[ctx.guild.id]
         await ctx.success(f"{user.mention} has been blacklisted from tickets.")
 
     @ticket_group.command(name='unblacklist', help='Remove a user from the ticket blacklist.')
     @commands.has_permissions(administrator=True)
     async def ticket_unblacklist(self, ctx, user: discord.Member):
         await self.bot.db_manager.update_one('ticket_config', {'_id': ctx.guild.id}, {'$pull': {'blacklist': user.id}})
-        if ctx.guild.id in self._config_cache: del self._config_cache[ctx.guild.id]
         await ctx.success(f"{user.mention} has been removed from the ticket blacklist.")
 
     @ticket_group.command(name='add', help='Add a user to the current ticket.')

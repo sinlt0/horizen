@@ -54,6 +54,10 @@ class Giveaways(commands.Cog):
     def cog_unload(self):
         self.giveaway_check_loop.cancel()
 
+    @giveaway_check_loop.before_loop
+    async def before_giveaway_check(self):
+        await self.bot.wait_until_ready()
+
     async def _resolve_time(self, time_str):
         match = re.match(r"(\d+)([smhd])", time_str.lower())
         if not match: return None

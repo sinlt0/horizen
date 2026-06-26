@@ -60,7 +60,6 @@ class SSChecker(commands.Cog):
         self.bot = bot
         self.db = bot.db_manager
         self.session = aiohttp.ClientSession()
-        # Multi-language indicators
         self.sub_indicators = [
             "subscrib", "unsubscribe", "subbed", "bell", "notification", "abonné", "désabonner", 
             "suscrito", "inscrito", "подписаться", "subscribed", "joined", "member", "membership"
@@ -70,7 +69,6 @@ class SSChecker(commands.Cog):
         self.bot.loop.create_task(self.session.close())
 
     async def _preprocess_image(self, image_bytes):
-        """Applies Quotient-style preprocessing to improve OCR accuracy."""
         try:
             with Image.open(io.BytesIO(image_bytes)) as img:
                 img = img.convert("L") # Grayscale
@@ -82,7 +80,6 @@ class SSChecker(commands.Cog):
         except: return image_bytes
 
     async def _get_perceptual_hash(self, image_bytes):
-        """Generates a Difference Hash (DHash) for robust similarity check."""
         try:
             with Image.open(io.BytesIO(image_bytes)) as img:
                 img = img.convert("L").resize((9, 8), Image.Resampling.LANCZOS)
@@ -147,7 +144,6 @@ class SSChecker(commands.Cog):
         attachment = message.attachments[0]
         if not any(attachment.filename.lower().endswith(ext) for ext in ['png', 'jpg', 'jpeg', 'webp']): return
 
-        # 1. Similarity Check (DHash)
         raw_bytes = await attachment.read()
         p_hash = await self._get_perceptual_hash(raw_bytes)
         if await self.db.find_one('ss_hashes', {'_id': p_hash}):
@@ -156,7 +152,6 @@ class SSChecker(commands.Cog):
             except: pass
             return
 
-        # 2. OCR with Preprocessing
         async with message.channel.typing():
             processed_bytes = await self._preprocess_image(raw_bytes)
             ocr_text = await self._perform_ocr(processed_bytes)

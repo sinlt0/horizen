@@ -4,7 +4,6 @@ import re
 import collections
 import time
 import datetime
-import aiohttp
 
 class AutoMod(commands.Cog):
     category = 'config'
@@ -17,10 +16,7 @@ class AutoMod(commands.Cog):
         self.violation_tracker = collections.defaultdict(list)
         self.heat_tracker = collections.defaultdict(float)
         self.last_heat_update = collections.defaultdict(float)
-        self.session = aiohttp.ClientSession()
 
-    def cog_unload(self):
-        self.bot.loop.create_task(self.session.close())
 
     async def get_config(self, guild_id):
         return await self.bot.get_config('automod_config', guild_id)

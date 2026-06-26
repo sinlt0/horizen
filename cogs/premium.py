@@ -54,7 +54,6 @@ class PremiumView(discord.ui.View):
         self.add_item(PremiumDurationSelect(premium_manager, target_id, mode))
 
 class PremiumCog(commands.Cog):
-    """Premium system commands for keys and guild management."""
     category = "premium"
 
     def __init__(self, bot):
@@ -66,9 +65,8 @@ class PremiumCog(commands.Cog):
             return await ctx.bot.is_owner(ctx.author) or ctx.bot.dev_manager.is_dev(ctx.author.id, ctx.bot)
         return commands.check(predicate)
 
-    @commands.group(name="premium", invoke_without_command=True)
+    @commands.group(name="premium", invoke_without_command=True, help="View premium status for this guild.")
     async def premium_group(self, ctx):
-        """View premium status for this guild."""
         is_prem, expiry = await self.pm.get_premium_status(ctx.guild.id)
         if is_prem:
             expiry_str = datetime.fromtimestamp(expiry).strftime('%Y-%m-%d %H:%M:%S') if expiry else "Lifetime"
@@ -76,30 +74,27 @@ class PremiumCog(commands.Cog):
         else:
             await ctx.info("This guild does not have Premium status.", title="Premium Status")
 
-    @premium_group.command(name="generate")
+    @premium_group.command(name="generate", help="Generate a premium key (Devs Only).")
     @is_dev_check()
     async def premium_generate(self, ctx):
-        """Generate a premium key (Devs Only)"""
         embed = ctx.bot.embed_manager.generic(
             "Select the duration for the new premium key:",
             title="Generate Premium Key"
         )
         await ctx.send(embed=embed, view=PremiumView(self.pm, mode="key"))
 
-    @premium_group.command(name="add")
+    @premium_group.command(name="add", help="Directly add premium to a guild (Devs Only).")
     @is_dev_check()
     async def premium_add(self, ctx, guild_id: int):
-        """Directly add premium to a guild (Devs Only)"""
         embed = ctx.bot.embed_manager.generic(
             f"Select the duration to give premium to Guild ID: `{guild_id}`",
             title="Add Direct Premium"
         )
         await ctx.send(embed=embed, view=PremiumView(self.pm, target_id=guild_id, mode="add"))
 
-    @premium_group.command(name="claim")
+    @premium_group.command(name="claim", help="Claim a premium key for this guild.")
     @commands.has_permissions(manage_guild=True)
     async def premium_claim(self, ctx, key: str):
-        """Claim a premium key for this guild."""
         success, result = await self.pm.claim_key(ctx.guild.id, key)
         if success:
             expiry_str = datetime.fromtimestamp(result).strftime('%Y-%m-%d %H:%M:%S') if result else "Lifetime"

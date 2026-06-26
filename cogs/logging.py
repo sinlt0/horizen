@@ -28,9 +28,10 @@ class Logging(commands.Cog):
         embed.add_field(name="Creator", value=f"{invite.inviter.mention if invite.inviter else 'Unknown'}")
         await self._send_log(invite.guild, 'invites', embed)
 
+    @commands.Cog.listener()
     async def on_invite_delete(self, invite):
         if invite.guild.id in self.invite_cache:
-            self.invite_cache[guild.id] = [i for i in self.invite_cache[guild.id] if i.code != invite.code]
+            self.invite_cache[invite.guild.id] = [i for i in self.invite_cache[invite.guild.id] if i.code != invite.code]
         embed = discord.Embed(title="Invite Deleted", color=discord.Color.red(), timestamp=discord.utils.utcnow())
         embed.add_field(name="Code", value=f"`{invite.code}`")
         await self._send_log(invite.guild, 'invites', embed)

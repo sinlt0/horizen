@@ -189,14 +189,7 @@ class Moderation(commands.Cog):
         if setting == 'logs':
             if not value:
                 return await ctx.error('Please mention a channel to set as the log channel.')
-            await self.update_config(ctx.guild.id, {'log_channel': value.id})
-            await ctx.success(f'Moderation logs will now be sent to {value.mention}.')
-        else:
-            await ctx.error('Unknown setting. Available: `logs`')
-
-async def setup(bot):
-    await bot.add_cog(Moderation(bot))
-channel': value.id}, upsert=True)
+            await self.db.update_one('mod_config', {'_id': ctx.guild.id}, {'log_channel': value.id}, upsert=True)
             await ctx.success(f'Moderation logs will now be sent to {value.mention}.')
         else:
             await ctx.error('Unknown setting. Available: `logs`')

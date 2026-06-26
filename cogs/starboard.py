@@ -41,7 +41,7 @@ class Starboard(commands.Cog):
     @commands.group(name='starboard', invoke_without_command=True, help='Configure the server starboard system.')
     @commands.has_permissions(manage_guild=True)
     async def starboard_group(self, ctx):
-        config = await self._get_config(ctx.guild.id)
+        config = await self.get_config(ctx.guild.id)
         channel = ctx.guild.get_channel(config['channel_id'])
         
         desc = (
@@ -74,7 +74,7 @@ class Starboard(commands.Cog):
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):
         if not payload.guild_id: return
-        config = await self._get_config(payload.guild_id)
+        config = await self.get_config(payload.guild_id)
         if not config['enabled'] or not config['channel_id']: return
         
         if str(payload.emoji) != config['emoji']: return
@@ -115,7 +115,7 @@ class Starboard(commands.Cog):
     @commands.Cog.listener()
     async def on_raw_reaction_remove(self, payload):
         if not payload.guild_id: return
-        config = await self._get_config(payload.guild_id)
+        config = await self.get_config(payload.guild_id)
         if not config['enabled'] or not config['channel_id']: return
         
         if str(payload.emoji) != config['emoji']: return

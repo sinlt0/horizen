@@ -159,8 +159,6 @@ class Suggestions(commands.Cog):
         sug = await self.db.find_one('suggestions', {'_id': message_id})
         if not sug: return await ctx.error("Suggestion not found.")
         
-        channel = ctx.guild.get_channel(sug['guild_id']) # Wait, guild_id is not channel_id
-        # We need the config to get the channel
         config = await self.db.find_one('suggestions_config', {'_id': ctx.guild.id})
         channel = ctx.guild.get_channel(config['channel_id'])
         if not channel: return await ctx.error("Suggestion channel not found.")

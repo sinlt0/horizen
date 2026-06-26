@@ -96,7 +96,7 @@ class Booster(commands.Cog):
                 'hoist': hoist
             }
         }, upsert=True)
-        if ctx.guild.id in self._config_cache: del self._config_cache[ctx.guild.id]
+
         await ctx.success(f"Booster requirements updated.\nClaim: `{claim}` | Icon: `{icon}` | Hoist: `{hoist}`")
 
     @booster_group.group(name='anchor', invoke_without_command=True, help='Manage the anchor role for hierarchy control.')
@@ -115,7 +115,7 @@ class Booster(commands.Cog):
                 'position': position.lower()
             }
         }, upsert=True)
-        if ctx.guild.id in self._config_cache: del self._config_cache[ctx.guild.id]
+
         await ctx.success(f"Anchor role set to {role.mention}. Custom roles will be created **{position}** it.")
 
     @booster_group.group(name='blacklist', invoke_without_command=True, help='Manage forbidden role names.')
@@ -136,7 +136,7 @@ class Booster(commands.Cog):
         if word.lower() not in bl:
             bl.append(word.lower())
             await self.db.update_one('booster_config', {'_id': ctx.guild.id}, {'blacklist_names': bl}, upsert=True)
-            if ctx.guild.id in self._config_cache: del self._config_cache[ctx.guild.id]
+    
             await ctx.success(f"Added `{word}` to the booster role name blacklist.")
         else:
             await ctx.error("That word is already blacklisted.")
@@ -148,7 +148,7 @@ class Booster(commands.Cog):
         if word.lower() in bl:
             bl.remove(word.lower())
             await self.db.update_one('booster_config', {'_id': ctx.guild.id}, {'blacklist_names': bl})
-            if ctx.guild.id in self._config_cache: del self._config_cache[ctx.guild.id]
+    
             await ctx.success(f"Removed `{word}` from the blacklist.")
         else:
             await ctx.error("That word is not in the blacklist.")
@@ -174,7 +174,7 @@ class Booster(commands.Cog):
             tiers[s_count].append(role.id)
             
         await self.db.update_one('booster_config', {'_id': ctx.guild.id}, {'tiers': tiers}, upsert=True)
-        if ctx.guild.id in self._config_cache: del self._config_cache[ctx.guild.id]
+
         
         await ctx.success(f"Added {role.mention} to the **{count}x Boost** tier. Syncing boosters...")
         # Background sync
@@ -191,7 +191,7 @@ class Booster(commands.Cog):
             tiers[s_count].remove(role.id)
             if not tiers[s_count]: del tiers[s_count]
             await self.db.update_one('booster_config', {'_id': ctx.guild.id}, {'tiers': tiers})
-            if ctx.guild.id in self._config_cache: del self._config_cache[ctx.guild.id]
+    
             await ctx.success(f"Removed {role.mention} from the **{count}x Boost** tier.")
         else:
             await ctx.error("That role is not in that tier.")
@@ -207,7 +207,7 @@ class Booster(commands.Cog):
                 'hoist': hoist
             }
         }, upsert=True)
-        if ctx.guild.id in self._config_cache: del self._config_cache[ctx.guild.id]
+
         await ctx.success(f"Requirements updated:\nClaim: `{claim}` | Color: `{color}` | Icon: `{icon}` | Hoist: `{hoist}`")
 
     @booster_group.command(name='perks', help='View your unlocked booster perks.')

@@ -23,7 +23,6 @@ class ApplicationModal(discord.ui.Modal):
             self.inputs.append(text_input)
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Log via central system
         log_cog = self.bot.get_cog('Logging')
         if not log_cog:
             return await interaction.response.send_message("Logging system not found.", ephemeral=True)
@@ -42,10 +41,8 @@ class ApplicationModal(discord.ui.Modal):
 
         view = AppReviewView(self.bot, interaction.user.id, self.role_id, self.category_name)
         
-        # 1. Log to central system
         await log_cog.log_apps(interaction.guild, embed)
         
-        # 2. Send to specific review channel (re-fetching config)
         config = await self.bot.db_manager.find_one('app_configs', {'_id': interaction.guild.id})
         log_channel = interaction.guild.get_channel(config.get('log_channel'))
         if log_channel:
@@ -53,7 +50,6 @@ class ApplicationModal(discord.ui.Modal):
         else:
             return await interaction.response.send_message("Application review channel not found.", ephemeral=True)
         
-        # Save app data
         app_data = {
             '_id': msg.id,
             'guild_id': interaction.guild.id,
@@ -88,7 +84,6 @@ class ApplySelectView(discord.ui.View):
         config = await self.bot.db_manager.find_one('app_configs', {'_id': interaction.guild.id})
         data = config['categories'][category_name]
         
-        # Check required roles
         if data.get('required_roles'):
             user_role_ids = [r.id for r in interaction.user.roles]
             missing = [rid for rid in data['required_roles'] if rid not in user_role_ids]
@@ -115,7 +110,6 @@ class AppReviewView(discord.ui.View):
         await self._process_app(interaction, 'denied')
 
     async def _process_app(self, interaction, status):
-        # Fetch data from DB as the view might be persistent
         app = await self.bot.db_manager.find_one('submitted_apps', {'_id': interaction.message.id})
         if not app: return await interaction.response.send_message("Application data not found.", ephemeral=True)
         if app['status'] != 'pending': return await interaction.response.send_message("This application has already been processed.", ephemeral=True)
@@ -125,7 +119,6 @@ class AppReviewView(discord.ui.View):
         guild = interaction.guild
         member = guild.get_member(user_id)
         
-        # Get role ID from config
         config = await self.bot.db_manager.find_one('app_configs', {'_id': guild.id})
         role_id = config['categories'][category_name]['role_id']
         
@@ -163,7 +156,6 @@ class AppReasonModal(discord.ui.Modal):
                 try: await self.member.add_roles(role, reason=f"Application Approved by {interaction.user}")
                 except: pass
 
-        # Notify user
         if self.member:
             try:
                 msg = f"Your application for **{interaction.guild.name}** has been **{self.status}**."
