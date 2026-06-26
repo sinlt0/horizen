@@ -201,29 +201,55 @@ class AlertDashboard(discord.ui.View):
 class SocialAlerts(commands.Cog):
     category = 'utility'
 
+    _TIMEOUT = aiohttp.ClientTimeout(total=15)
+
     def __init__(self, bot):
         self.bot = bot
         self.db = bot.db_manager
         self.session = None
         self.twitch_token = None
         self.nitter_instances = ["nitter.net", "nitter.cz", "nitter.it", "nitter.privacydev.net"]
-        self.check_loop.start()
 
     async def cog_load(self):
-        self.session = aiohttp.ClientSession(headers={"User-Agent": "HorizenBot/2.0"})
+        reddit_ua = "discord:HorizenBot:2.0 (by /u/HorizenSystems)"
+        self.session = aiohttp.ClientSession(headers={"User-Agent": reddit_ua})
         await self._update_twitch_token()
+        self.check_loop.start()
 
     def cog_unload(self):
         self.check_loop.cancel()
         if self.session:
             self.bot.loop.create_task(self.session.close())
 
+    @tasks.loop(minutes=5)
+    async def check_loop(self):
+        all_configs = await self.db.find('social_alerts', {})
+        for config in all_configs:
+            guild_id = config['_id']
+            guild = self.bot.get_guild(guild_id)
+            if not guild:
+                continue
+            await self._process_youtube(guild, config)
+            await self._process_twitch(guild, config)
+            await self._process_reddit(guild, config)
+            await self._process_twitter(guild, config)
+            await asyncio.sleep(1)
+
+    @check_loop.before_loop
+    async def before_check_loop(self):
+        await self.bot.wait_until_ready()
+
     async def _update_twitch_token(self):
         if not self.bot.config.TWITCH_CLIENT_ID or not self.bot.config.TWITCH_CLIENT_SECRET:
             return
-        url = f"https://id.twitch.tv/oauth2/token?client_id={self.bot.config.TWITCH_CLIENT_ID}&client_secret={self.bot.config.TWITCH_CLIENT_SECRET}&grant_type=client_credentials"
+        url = (
+            f"https://id.twitch.tv/oauth2/token"
+            f"?client_id={self.bot.config.TWITCH_CLIENT_ID}"
+            f"&client_secret={self.bot.config.TWITCH_CLIENT_SECRET}"
+            f"&grant_type=client_credentials"
+        )
         try:
-            async with self.session.post(url) as resp:
+            async with self.session.post(url, timeout=self._TIMEOUT) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     self.twitch_token = data.get('access_token')
@@ -234,74 +260,87 @@ class SocialAlerts(commands.Cog):
 
     async def _fetch_rss(self, url):
         try:
-            async with self.session.get(url, timeout=15) as resp:
+            async with self.session.get(url, timeout=self._TIMEOUT) as resp:
                 if resp.status == 200:
-                    return ET.fromstring(await resp.text())
-        except: return None
+                    text = await resp.text()
+                    return ET.fromstring(text)
+        except ET.ParseError as e:
+            print(f"SocialAlerts: RSS parse error for {url}: {e}")
+        except Exception as e:
+            print(f"SocialAlerts: RSS fetch error for {url}: {e}")
+        return None
 
     async def _fetch_json(self, url, headers=None):
         try:
-            async with self.session.get(url, timeout=15, headers=headers) as resp:
+            async with self.session.get(url, timeout=self._TIMEOUT, headers=headers) as resp:
                 if resp.status == 200:
                     return await resp.json()
-        except: return None
-
-    @tasks.loop(minutes=5)
-    async def check_loop(self):
-        all_configs = await self.db.find('social_alerts', {})
-        for config in all_configs:
-            guild_id = config['_id']
-            guild = self.bot.get_guild(guild_id)
-            if not guild: continue
-            
-            await self._process_youtube(guild, config)
-            await self._process_twitch(guild, config)
-            await self._process_reddit(guild, config)
-            await self._process_twitter(guild, config)
-            await asyncio.sleep(1)
+                else:
+                    print(f"SocialAlerts: HTTP {resp.status} for {url}")
+        except Exception as e:
+            print(f"SocialAlerts: JSON fetch error for {url}: {e}")
+        return None
 
     async def _process_youtube(self, guild, config):
         feeds = config.get('youtube', [])
         changed = False
         for feed in feeds:
             root = await self._fetch_rss(f"https://www.youtube.com/feeds/videos.xml?channel_id={feed['channel_id']}")
-            if root is None: continue
+            if root is None:
+                continue
             
             namespace = {'ns': 'http://www.w3.org/2005/Atom', 'yt': 'http://www.youtube.com/xml/schemas/2015'}
             entries = root.findall('ns:entry', namespace)
-            if not entries: continue
+            if not entries:
+                continue
 
             latest = entries[0]
-            v_id = latest.find('yt:videoId', namespace).text
+            v_id_el = latest.find('yt:videoId', namespace)
+            if v_id_el is None:
+                continue
+            v_id = v_id_el.text
             if v_id != feed.get('last_id'):
-                feed['last_video_id'] = v_id
                 feed['last_id'] = v_id
                 changed = True
+                title_el = latest.find('ns:title', namespace)
+                link_el = latest.find('ns:link', namespace)
+                channel_title_el = root.find('ns:title', namespace)
                 await self._dispatch_alert(guild, feed, "youtube", {
-                    "title": latest.find('ns:title', namespace).text,
-                    "url": latest.find('ns:link', namespace).attrib['href'],
-                    "author": root.find('ns:title', namespace).text,
+                    "title": title_el.text if title_el is not None else "New Video",
+                    "url": link_el.attrib.get('href', '') if link_el is not None else '',
+                    "author": channel_title_el.text if channel_title_el is not None else feed.get('name', feed['channel_id']),
                     "image": f"https://img.youtube.com/vi/{v_id}/maxresdefault.jpg"
                 })
-        if changed: await self.db.update_one('social_alerts', {'_id': guild.id}, {'youtube': feeds})
+        if changed:
+            await self.db.update_one('social_alerts', {'_id': guild.id}, {'youtube': feeds})
 
     async def _process_twitch(self, guild, config):
-        if not self.twitch_token: return
+        if not self.twitch_token:
+            return
         feeds = config.get('twitch', [])
-        if not feeds: return
+        if not feeds:
+            return
         
         changed = False
-        headers = {"Client-ID": self.bot.config.TWITCH_CLIENT_ID, "Authorization": f"Bearer {self.twitch_token}"}
+        headers = {
+            "Client-ID": self.bot.config.TWITCH_CLIENT_ID,
+            "Authorization": f"Bearer {self.twitch_token}"
+        }
         
         for feed in feeds:
             data = await self._fetch_json(f"https://api.twitch.tv/helix/streams?user_login={feed['channel_id']}", headers)
-            if data and data.get('status') == 401:
+            if not data:
+                continue
+
+            if data.get('status') == 401:
                 await self._update_twitch_token()
                 continue
             
-            if not data or not data.get('data'): continue
+            stream_list = data.get('data', [])
+            if not stream_list:
+                continue
             
-            stream = data['data'][0]
+            stream = stream_list[0]
             if stream['id'] != feed.get('last_id'):
                 feed['last_id'] = stream['id']
                 changed = True
@@ -312,16 +351,21 @@ class SocialAlerts(commands.Cog):
                     "image": stream['thumbnail_url'].replace("{width}", "1280").replace("{height}", "720"),
                     "extra": f"🎮 Category: **{stream['game_name']}**"
                 })
-        if changed: await self.db.update_one('social_alerts', {'_id': guild.id}, {'twitch': feeds})
+        if changed:
+            await self.db.update_one('social_alerts', {'_id': guild.id}, {'twitch': feeds})
 
     async def _process_reddit(self, guild, config):
         feeds = config.get('reddit', [])
         changed = False
         for feed in feeds:
             data = await self._fetch_json(f"https://www.reddit.com/r/{feed['channel_id']}/new.json?limit=1")
-            if not data or not data.get('data', {}).get('children'): continue
+            if not data:
+                continue
+            children = data.get('data', {}).get('children', [])
+            if not children:
+                continue
             
-            post = data['data']['children'][0]['data']
+            post = children[0]['data']
             if post['id'] != feed.get('last_id'):
                 feed['last_id'] = post['id']
                 changed = True
@@ -332,7 +376,8 @@ class SocialAlerts(commands.Cog):
                     "image": post.get('url') if post.get('post_hint') == 'image' else None,
                     "extra": f"🔖 Subreddit: **r/{feed['channel_id']}**"
                 })
-        if changed: await self.db.update_one('social_alerts', {'_id': guild.id}, {'reddit': feeds})
+        if changed:
+            await self.db.update_one('social_alerts', {'_id': guild.id}, {'reddit': feeds})
 
     async def _process_twitter(self, guild, config):
         feeds = config.get('twitter', [])
@@ -340,29 +385,41 @@ class SocialAlerts(commands.Cog):
         instance = random.choice(self.nitter_instances)
         for feed in feeds:
             root = await self._fetch_rss(f"https://{instance}/{feed['channel_id']}/rss")
-            if root is None: continue
+            if root is None:
+                continue
             
             channel = root.find('channel')
-            items = channel.findall('item') if channel else []
-            if not items: continue
+            if channel is None:
+                continue
+            items = channel.findall('item')
+            if not items:
+                continue
 
             latest = items[0]
-            t_id = latest.find('guid').text if latest.find('guid') is not None else latest.find('link').text
+            guid_el = latest.find('guid')
+            link_el = latest.find('link')
+            t_id = (guid_el.text if guid_el is not None else None) or (link_el.text if link_el is not None else None)
+            if not t_id:
+                continue
+
             if t_id != feed.get('last_id'):
                 feed['last_id'] = t_id
                 changed = True
-                desc_text = latest.find('description').text or "View on Twitter"
+                desc_el = latest.find('description')
+                desc_text = (desc_el.text or "View on Twitter") if desc_el is not None else "View on Twitter"
                 await self._dispatch_alert(guild, feed, "twitter", {
                     "title": desc_text[:300].replace("<br>", "\n"),
-                    "url": latest.find('link').text,
+                    "url": link_el.text if link_el is not None else f"https://twitter.com/{feed['channel_id']}",
                     "author": f"@{feed['channel_id']}",
                     "image": None
                 })
-        if changed: await self.db.update_one('social_alerts', {'_id': guild.id}, {'twitter': feeds})
+        if changed:
+            await self.db.update_one('social_alerts', {'_id': guild.id}, {'twitter': feeds})
 
     async def _dispatch_alert(self, guild, feed, platform, data, is_test=False):
         target_channel = guild.get_channel(feed['discord_channel_id'])
-        if not target_channel: return
+        if not target_channel:
+            return
 
         color = AlertStyle.COLORS.get(platform, 0x2F3136)
         icon_url = AlertStyle.ICONS.get(platform)
@@ -397,35 +454,42 @@ class SocialAlerts(commands.Cog):
         }
         
         embed = discord.Embed(color=color, timestamp=discord.utils.utcnow())
-        embed.set_author(name=f"{data['author']} • {platform.capitalize()}{' (TEST)' if is_test else ''}", icon_url=icon_url, url=placeholders["channelurl"])
+        embed.set_author(
+            name=f"{data['author']} • {platform.capitalize()}{' (TEST)' if is_test else ''}",
+            icon_url=icon_url,
+            url=placeholders["channelurl"]
+        )
         
         main_title = data['title']
-        if len(main_title) > 250: main_title = main_title[:247] + "..."
+        if len(main_title) > 250:
+            main_title = main_title[:247] + "..."
         
         embed.title = f"✨ {main_title}"
         embed.url = data['url']
         
         info_fields = f"**Platform:** `{platform.capitalize()}`"
-        if data.get('extra'): info_fields += f"\n{data['extra']}"
+        if data.get('extra'):
+            info_fields += f"\n{data['extra']}"
         
         embed.description = f"{info_fields}\n\n[Click here to view the content]({data['url']})"
-        if data.get('image'): embed.set_image(url=data['image'])
+        if data.get('image'):
+            embed.set_image(url=data['image'])
         embed.set_footer(text=f"Horizen Systems • {platform.capitalize()} Intelligence", icon_url=self.bot.user.display_avatar.url)
         
         raw_msg = feed.get('message', "{mention} **{author}** is now available on **{platform}**!")
-        
         try:
             formatted_msg = raw_msg.format(**placeholders)
-        except:
+        except Exception:
             formatted_msg = raw_msg
         
-        try: await target_channel.send(content=formatted_msg, embed=embed)
+        try:
+            await target_channel.send(content=formatted_msg, embed=embed)
         except discord.Forbidden:
             print(f"SocialAlerts: Missing permissions in {guild.name} (#{target_channel.name})")
         except Exception as e:
             print(f"SocialAlerts: Dispatch Error: {e}")
 
-    @commands.group(name="alerts", aliases=["notifications", "notifs"], invoke_without_command=True)
+    @commands.group(name="alerts", aliases=["notifications", "notifs"], invoke_without_command=True, help="Open the Social Hub dashboard to manage platform notification feeds.")
     @commands.has_permissions(administrator=True)
     async def alerts_group(self, ctx):
         config = await self.db.find_one('social_alerts', {'_id': ctx.guild.id}) or {}
@@ -467,21 +531,25 @@ class SocialAlerts(commands.Cog):
         try:
             dch_id = int(dch_id)
             rid = int(role_id) if role_id.strip() else None
-        except:
+        except Exception:
             return await interaction.response.send_message("Invalid Channel/Role ID. Must be numbers.", ephemeral=True)
 
         dch = interaction.guild.get_channel(dch_id)
-        if not dch: return await interaction.response.send_message("Discord Channel not found.", ephemeral=True)
+        if not dch:
+            return await interaction.response.send_message("Discord Channel not found.", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
         name = cid
         if platform == "youtube":
             root = await self._fetch_rss(f"https://www.youtube.com/feeds/videos.xml?channel_id={cid}")
-            if not root: return await interaction.followup.send("Invalid YouTube Channel ID.")
-            name = root.find('{http://www.w3.org/2005/Atom}title').text
+            if not root:
+                return await interaction.followup.send("Invalid YouTube Channel ID.")
+            title_el = root.find('{http://www.w3.org/2005/Atom}title')
+            name = title_el.text if title_el is not None else cid
         elif platform == "reddit":
             data = await self._fetch_json(f"https://www.reddit.com/r/{cid}/about.json")
-            if not data or 'error' in data: return await interaction.followup.send("Invalid Subreddit.")
+            if not data or 'error' in data:
+                return await interaction.followup.send("Invalid Subreddit.")
             name = f"r/{cid}"
 
         config = await self.db.find_one('social_alerts', {'_id': interaction.guild.id}) or {}
@@ -505,7 +573,10 @@ class SocialAlerts(commands.Cog):
         feeds = config.get(platform, [])
         removed = feeds.pop(index)
         await self.db.update_one('social_alerts', {'_id': interaction.guild.id}, {platform: feeds}, upsert=True)
-        await interaction.response.send_message(f"{self.bot.e.success} Removed **{platform.capitalize()}** alerts for **{removed.get('name', removed['channel_id'])}**.", ephemeral=True)
+        await interaction.response.send_message(
+            f"{self.bot.e.success} Removed **{platform.capitalize()}** alerts for **{removed.get('name', removed['channel_id'])}**.",
+            ephemeral=True
+        )
 
 async def setup(bot):
     await bot.add_cog(SocialAlerts(bot))

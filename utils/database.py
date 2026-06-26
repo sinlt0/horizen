@@ -30,7 +30,7 @@ class DatabaseManager:
         await self._init_mongodb()
         await self._init_mariadb()
         await self._init_sqlite()
-        
+
         if self.mongodb_clusters:
             self.primary_type = 'mongodb'
             await self._load_sharding_assignments()
@@ -43,7 +43,7 @@ class DatabaseManager:
             await self._setup_sql_tables('mariadb')
         if self.sqlite_conn is not None:
             await self._setup_sql_tables('sqlite')
-            
+
         logger.info(f'All database connections initialized. Primary storage: {self.primary_type}')
 
     async def _init_mongodb(self):
@@ -59,21 +59,25 @@ class DatabaseManager:
 
     async def _load_sharding_assignments(self):
         primary = self.mongodb_clusters.get('primary')
-        if not primary: return
+        if not primary:
+            return
         cursor = primary['db'][self.assignments_collection].find({})
         async for doc in cursor:
             self.guild_shards[doc['_id']] = doc['cluster']
         logger.info(f'Loaded {len(self.guild_shards)} guild sharding assignments')
 
     async def get_cluster_name(self, guild_id: int):
-        if not guild_id: return 'primary'
-        if guild_id in self.guild_shards: return self.guild_shards[guild_id]
+        if not guild_id:
+            return 'primary'
+        if guild_id in self.guild_shards:
+            return self.guild_shards[guild_id]
         if self.primary_type == 'mongodb':
             primary = self.mongodb_clusters.get('primary')
-            doc = await primary['db'][self.assignments_collection].find_one({'_id': guild_id})
-            if doc:
-                self.guild_shards[guild_id] = doc['cluster']
-                return doc['cluster']
+            if primary:
+                doc = await primary['db'][self.assignments_collection].find_one({'_id': guild_id})
+                if doc:
+                    self.guild_shards[guild_id] = doc['cluster']
+                    return doc['cluster']
             return await self.assign_guild(guild_id)
         return 'primary'
 
@@ -83,24 +87,29 @@ class DatabaseManager:
         assigned_cluster = random.choice(shard_options)
         if self.primary_type == 'mongodb':
             primary = self.mongodb_clusters.get('primary')
-            await primary['db'][self.assignments_collection].update_one({'_id': guild_id}, {'$set': {'cluster': assigned_cluster}}, upsert=True)
+            if primary:
+                await primary['db'][self.assignments_collection].update_one(
+                    {'_id': guild_id}, {'$set': {'cluster': assigned_cluster}}, upsert=True
+                )
         self.guild_shards[guild_id] = assigned_cluster
         logger.info(f"Assigned guild {guild_id} to cluster '{assigned_cluster}'")
         return assigned_cluster
 
-    def get_db(self, cluster_name: str='primary'):
+    def get_db(self, cluster_name: str = 'primary'):
         cluster = self.mongodb_clusters.get(cluster_name) or self.mongodb_clusters.get('primary')
         return cluster['db'] if cluster else None
 
     def _resolve_guild_id(self, collection: str, query: dict) -> int:
         if 'guild_id' in query and isinstance(query['guild_id'], (int, str)):
-            try: return int(query['guild_id'])
-            except: pass
+            try:
+                return int(query['guild_id'])
+            except Exception:
+                pass
         id_val = query.get('_id') or query.get('id')
         guild_level_collections = [
-            'guild_prefixes', 'guild_premium', 'automod_config', 'mod_config', 
-            'logging_config', 'verification_config', 'voicemaster_config', 
-            'greetings_config', 'autorole_config', 'afk_users', 'afk_config', 
+            'guild_prefixes', 'guild_premium', 'automod_config', 'mod_config',
+            'logging_config', 'verification_config', 'voicemaster_config',
+            'greetings_config', 'autorole_config', 'afk_users', 'afk_config',
             'afk_prefs', 'leveling_config', 'ticket_config', 'booster_config',
             'antinuke_config', 'suggestions_config', 'starboard_config',
             'app_configs', 'ss_checker_config', 'customization_config',
@@ -108,11 +117,15 @@ class DatabaseManager:
             'joined_members_map', 'status_reward_config', 'status_reward_data'
         ]
         if id_val and collection in guild_level_collections:
-            try: return int(id_val)
-            except: pass
+            try:
+                return int(id_val)
+            except Exception:
+                pass
         if isinstance(id_val, str) and ':' in id_val and collection in ['users_xp', 'booster_users', 'active_tickets_count']:
-            try: return int(id_val.split(':')[0])
-            except: pass
+            try:
+                return int(id_val.split(':')[0])
+            except Exception:
+                pass
         return None
 
     async def find_one(self, collection: str, query: dict):
@@ -123,7 +136,8 @@ class DatabaseManager:
                 db = self.get_db(cluster_name)
                 if db is not None:
                     res = await db[collection].find_one(query)
-                    if res: return res
+                    if res:
+                        return res
             except Exception as e:
                 logger.warning(f"MongoDB Find Error: {e}. Falling back to SQLite.")
         table = collection
@@ -136,53 +150,70 @@ class DatabaseManager:
             res = await self.sqlite_fetchone(q, (id_val,))
             if res:
                 item = json.loads(res[1])
-                if '_id' not in item: item['_id'] = res[0]
+                if '_id' not in item:
+                    item['_id'] = res[0]
                 return item
-        except: pass
+        except Exception as e:
+            logger.warning(f"SQLite find_one error on '{collection}': {e}")
         return None
 
-    async def update_one(self, collection: str, query: dict, update: dict, upsert: bool=False):
+    async def update_one(self, collection: str, query: dict, update: dict, upsert: bool = False):
         guild_id = self._resolve_guild_id(collection, query)
         mongo_success = False
+        cluster_name = 'unknown'
         if self.primary_type == 'mongodb':
             try:
                 cluster_name = await self.get_cluster_name(guild_id)
                 db = self.get_db(cluster_name)
                 if db is not None:
-                    actual_update = update if any((k.startswith('$') for k in update)) else {'$set': update}
+                    actual_update = update if any(k.startswith('$') for k in update) else {'$set': update}
                     await db[collection].update_one(query, actual_update, upsert=upsert)
                     mongo_success = True
+                else:
+                    logger.warning(f"MongoDB update_one: no db for cluster '{cluster_name}', falling back to SQLite.")
             except Exception as e:
                 logger.error(f"MongoDB Update Failure (Cluster: {cluster_name}): {e}. Emergency Save to SQLite initiated.")
+
         id_val = query.get('_id') or query.get('id') or query.get('key')
         table = collection
         try:
             existing = await self.find_one(collection, query) or {}
             is_new = not bool(existing)
             if any(k.startswith('$') for k in update):
-                if '$set' in update: existing.update(update['$set'])
-                if '$setOnInsert' in update and is_new: existing.update(update['$setOnInsert'])
+                if '$set' in update:
+                    existing.update(update['$set'])
+                if '$setOnInsert' in update and is_new:
+                    existing.update(update['$setOnInsert'])
                 if '$inc' in update:
-                    for k, v in update['$inc'].items(): existing[k] = existing.get(k, 0) + v
+                    for k, v in update['$inc'].items():
+                        existing[k] = existing.get(k, 0) + v
                 if '$push' in update:
                     for k, v in update['$push'].items():
-                        if k not in existing: existing[k] = []
-                        if not isinstance(existing[k], list): existing[k] = [existing[k]]
+                        if k not in existing:
+                            existing[k] = []
+                        if not isinstance(existing[k], list):
+                            existing[k] = [existing[k]]
                         existing[k].append(v)
                 if '$addToSet' in update:
                     for k, v in update['$addToSet'].items():
-                        if k not in existing: existing[k] = []
-                        if v not in existing[k]: existing[k].append(v)
+                        if k not in existing:
+                            existing[k] = []
+                        if v not in existing[k]:
+                            existing[k].append(v)
                 if '$pull' in update:
                     for k, v in update['$pull'].items():
-                        if k in existing and v in existing[k]: existing[k].remove(v)
+                        if k in existing and v in existing[k]:
+                            existing[k].remove(v)
                 if '$unset' in update:
                     for k in update['$unset']:
-                        if k in existing: del existing[k]
-            else: existing.update(update)
+                        if k in existing:
+                            del existing[k]
+            else:
+                existing.update(update)
             if is_new:
                 for k, v in query.items():
-                    if k not in ['$or', '$and', '$not'] and k not in existing: existing[k] = v
+                    if k not in ['$or', '$and', '$not'] and k not in existing:
+                        existing[k] = v
             json_data = json.dumps(existing, cls=DatabaseEncoder)
             q = f'INSERT OR REPLACE INTO {table} (id, data) VALUES (?, ?)'
             if table == 'premium_keys' and 'key' in query:
@@ -215,8 +246,10 @@ class DatabaseManager:
             try:
                 cluster_name = await self.get_cluster_name(guild_id)
                 db = self.get_db(cluster_name)
-                if db is not None: await db[collection].delete_one(query)
-            except Exception as e: logger.error(f"MongoDB Delete Error: {e}")
+                if db is not None:
+                    await db[collection].delete_one(query)
+            except Exception as e:
+                logger.error(f"MongoDB Delete Error: {e}")
         id_val = query.get('_id') or query.get('id') or query.get('key')
         try:
             q = f'DELETE FROM {collection} WHERE id = ?'
@@ -224,30 +257,62 @@ class DatabaseManager:
                 id_val = query['key']
                 q = f'DELETE FROM {collection} WHERE key_str = ?'
             await self.sqlite_execute(q, (id_val,))
-        except: pass
+        except Exception as e:
+            logger.warning(f"SQLite delete_one error on '{collection}': {e}")
         return 1
 
     async def find(self, collection: str, query: dict, sort: list = None, limit: int = 0, skip: int = 0):
         guild_id = self._resolve_guild_id(collection, query)
+
         if self.primary_type == 'mongodb':
             try:
-                cluster_name = await self.get_cluster_name(guild_id)
-                db = self.get_db(cluster_name)
-                if db is not None:
-                    cursor = db[collection].find(query)
-                    if sort: cursor = cursor.sort(sort)
-                    if skip: cursor = cursor.skip(skip)
-                    if limit: cursor = cursor.limit(limit)
-                    return await cursor.to_list(length=limit or 1000)
-            except Exception as e: logger.warning(f"MongoDB Find Error: {e}")
+                if guild_id is None and not query:
+                    all_results = []
+                    seen_ids = set()
+                    for cluster_name, cluster_data in self.mongodb_clusters.items():
+                        try:
+                            db = cluster_data['db']
+                            cursor = db[collection].find(query)
+                            if sort:
+                                cursor = cursor.sort(sort)
+                            if skip:
+                                cursor = cursor.skip(skip)
+                            if limit:
+                                cursor = cursor.limit(limit)
+                            docs = await cursor.to_list(length=limit or 1000)
+                            for doc in docs:
+                                doc_id = doc.get('_id')
+                                if doc_id not in seen_ids:
+                                    seen_ids.add(doc_id)
+                                    all_results.append(doc)
+                        except Exception as e:
+                            logger.warning(f"MongoDB find fan-out error on cluster '{cluster_name}': {e}")
+                    return all_results
+                else:
+                    cluster_name = await self.get_cluster_name(guild_id)
+                    db = self.get_db(cluster_name)
+                    if db is not None:
+                        cursor = db[collection].find(query)
+                        if sort:
+                            cursor = cursor.sort(sort)
+                        if skip:
+                            cursor = cursor.skip(skip)
+                        if limit:
+                            cursor = cursor.limit(limit)
+                        return await cursor.to_list(length=limit or 1000)
+            except Exception as e:
+                logger.warning(f"MongoDB Find Error: {e}")
+
         try:
             q = f'SELECT id, data FROM {collection}'
-            if collection == 'premium_keys': q = f'SELECT key_str, data FROM {collection}'
+            if collection == 'premium_keys':
+                q = f'SELECT key_str, data FROM {collection}'
             res = await self.sqlite_execute_all(q)
             data = []
             for r in res:
                 item = json.loads(r[1])
-                if '_id' not in item: item['_id'] = r[0]
+                if '_id' not in item:
+                    item['_id'] = r[0]
                 data.append(item)
             filtered = []
             for item in data:
@@ -256,14 +321,19 @@ class DatabaseManager:
                     if item.get(k) != v:
                         match = False
                         break
-                if match: filtered.append(item)
+                if match:
+                    filtered.append(item)
             if sort:
                 key, direction = sort[0]
                 filtered.sort(key=lambda x: x.get(key, 0), reverse=(direction == -1))
-            if skip: filtered = filtered[skip:]
-            if limit: filtered = filtered[:limit]
+            if skip:
+                filtered = filtered[skip:]
+            if limit:
+                filtered = filtered[:limit]
             return filtered
-        except: return []
+        except Exception as e:
+            logger.warning(f"SQLite find error on '{collection}': {e}")
+            return []
 
     async def count(self, collection: str, query: dict):
         guild_id = self._resolve_guild_id(collection, query)
@@ -271,13 +341,16 @@ class DatabaseManager:
             try:
                 cluster_name = await self.get_cluster_name(guild_id)
                 db = self.get_db(cluster_name)
-                if db is not None: return await db[collection].count_documents(query)
-            except: pass
+                if db is not None:
+                    return await db[collection].count_documents(query)
+            except Exception as e:
+                logger.warning(f"MongoDB count error: {e}")
         res = await self.find(collection, query)
         return len(res)
 
-    async def sqlite_execute_all(self, query: str, args: tuple=None):
-        if self.sqlite_conn is None: return []
+    async def sqlite_execute_all(self, query: str, args: tuple = None):
+        if self.sqlite_conn is None:
+            return []
         async with self.sqlite_conn.execute(query, args or ()) as cursor:
             return await cursor.fetchall()
 
@@ -326,35 +399,51 @@ class DatabaseManager:
             'CREATE TABLE IF NOT EXISTS status_reward_config (id BIGINT PRIMARY KEY, data TEXT)',
             'CREATE TABLE IF NOT EXISTS status_reward_data (id VARCHAR(100) PRIMARY KEY, data TEXT)',
             'CREATE TABLE IF NOT EXISTS social_alerts (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS stats_config (id BIGINT PRIMARY KEY, data TEXT)'
+            'CREATE TABLE IF NOT EXISTS stats_config (id BIGINT PRIMARY KEY, data TEXT)',
+            'CREATE TABLE IF NOT EXISTS antinuke_config (id BIGINT PRIMARY KEY, data TEXT)',
         ]
         for q in queries:
-            if db_type == 'mariadb': await self.mariadb_execute(q)
-            else: await self.sqlite_execute(q)
+            if db_type == 'mariadb':
+                await self.mariadb_execute(q)
+            else:
+                await self.sqlite_execute(q)
 
-    async def mariadb_execute(self, query: str, args: tuple=None):
-        if self.mariadb_pool is None: return None
+    async def mariadb_execute(self, query: str, args: tuple = None):
+        if self.mariadb_pool is None:
+            return None
         async with self.mariadb_pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(query, args or ())
                 return cur.rowcount
 
-    async def sqlite_fetchone(self, query: str, args: tuple=None):
-        if self.sqlite_conn is None: return None
+    async def sqlite_fetchone(self, query: str, args: tuple = None):
+        if self.sqlite_conn is None:
+            return None
         async with self.sqlite_conn.execute(query, args or ()) as cursor:
             return await cursor.fetchone()
 
-    async def sqlite_execute(self, query: str, args: tuple=None):
-        if self.sqlite_conn is None: return None
+    async def sqlite_execute(self, query: str, args: tuple = None):
+        if self.sqlite_conn is None:
+            return None
         cursor = await self.sqlite_conn.execute(query, args or ())
         await self.sqlite_conn.commit()
         return cursor.rowcount
 
     async def _init_mariadb(self):
         try:
-            self.mariadb_pool = await aiomysql.create_pool(host=self.config.MARIADB_HOST, port=self.config.MARIADB_PORT, user=self.config.MARIADB_USER, password=self.config.MARIADB_PASSWORD, db=self.config.MARIADB_DB_NAME, autocommit=True, connect_timeout=2)
+            self.mariadb_pool = await aiomysql.create_pool(
+                host=self.config.MARIADB_HOST,
+                port=self.config.MARIADB_PORT,
+                user=self.config.MARIADB_USER,
+                password=self.config.MARIADB_PASSWORD,
+                db=self.config.MARIADB_DB_NAME,
+                autocommit=True,
+                connect_timeout=2
+            )
             logger.info('MariaDB connection pool established')
-        except: self.mariadb_pool = None
+        except Exception as e:
+            logger.warning(f'MariaDB init failed (will use fallback): {e}')
+            self.mariadb_pool = None
 
     async def _init_sqlite(self):
         try:
@@ -362,12 +451,16 @@ class DatabaseManager:
             self.sqlite_conn = await aiosqlite.connect(self.config.SQLITE_DB_PATH)
             await self.sqlite_conn.execute('PRAGMA foreign_keys = ON')
             logger.info('SQLite connection established')
-        except: self.sqlite_conn = None
+        except Exception as e:
+            logger.error(f'SQLite init failed: {e}')
+            self.sqlite_conn = None
 
     async def close(self):
-        for name, data in self.mongodb_clusters.items(): data['client'].close()
+        for name, data in self.mongodb_clusters.items():
+            data['client'].close()
         if self.mariadb_pool:
             self.mariadb_pool.close()
             await self.mariadb_pool.wait_closed()
-        if self.sqlite_conn: await self.sqlite_conn.close()
+        if self.sqlite_conn:
+            await self.sqlite_conn.close()
         logger.info('All database connections closed')
