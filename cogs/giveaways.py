@@ -11,7 +11,7 @@ class GiveawayView(discord.ui.View):
         super().__init__(timeout=None)
         self.bot = bot
 
-    @discord.ui.button(label="Enter Giveaway", style=discord.ButtonStyle.blurple, custom_id="gw_enter")
+    @discord.ui.button(label="Enter Giveaway", style=discord.ButtonStyle.blurple, emoji="🎉", custom_id="gw_enter")
     async def enter_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         gw = await self.bot.db_manager.find_one('giveaways', {'_id': interaction.message.id, 'active': True})
         if not gw:
@@ -20,25 +20,51 @@ class GiveawayView(discord.ui.View):
         req_roles = gw.get('required_roles', [])
         if req_roles:
             if not any(role.id in req_roles for role in interaction.user.roles):
-                required_role_mentions = ", ".join([f"<@&{r_id}>" for r_id in req_roles])
-                return await interaction.response.send_message(f"You don't have the required roles to join: {required_role_mentions}", ephemeral=True)
+                mentions = ", ".join([f"<@&{r}>" for r in req_roles])
+                return await interaction.response.send_message(f"You need one of these roles to enter: {mentions}", ephemeral=True)
 
-        if interaction.user.id in gw.get('entries', []):
+        entries = gw.get('entries', [])
+        if interaction.user.id in entries:
             return await interaction.response.send_message("You have already entered this giveaway!", ephemeral=True)
 
         await self.bot.db_manager.update_one('giveaways', {'_id': interaction.message.id}, {'$addToSet': {'entries': interaction.user.id}}, upsert=True)
-        
+
         bonus_roles = gw.get('bonus_roles', {})
         multiplier = 1
         for r_id, mult in bonus_roles.items():
             if any(role.id == int(r_id) for role in interaction.user.roles):
                 multiplier = max(multiplier, mult)
-        
-        msg = "You have successfully entered the giveaway!"
+
+        total = len(entries) + 1
+        msg = f"🎉 You're in! **{total}** {'entry' if total == 1 else 'entries'} so far."
         if multiplier > 1:
-            msg += f" (Bonus: **{multiplier}x** entries applied)"
-            
+            msg += f"\n✨ Your **{multiplier}x** bonus applies when winners are drawn."
+
         await interaction.response.send_message(msg, ephemeral=True)
+
+class GiveawayEndView(discord.ui.View):
+    def __init__(self, bot, gw_id, guild_id, channel_id):
+        super().__init__(timeout=None)
+        self.bot = bot
+        self.gw_id = gw_id
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    @discord.ui.button(label="Reroll Winner", style=discord.ButtonStyle.secondary, emoji="🔄", custom_id="gw_reroll_btn")
+    async def reroll_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.manage_guild:
+            return await interaction.response.send_message("You need `Manage Server` to reroll.", ephemeral=True)
+
+        gw = await self.bot.db_manager.find_one('giveaways', {'_id': self.gw_id})
+        if not gw or gw.get('active'):
+            return await interaction.response.send_message("Giveaway data not found or still active.", ephemeral=True)
+
+        entries = gw.get('entries', [])
+        if not entries:
+            return await interaction.response.send_message("No entries to reroll from.", ephemeral=True)
+
+        winner = random.choice(entries)
+        await interaction.response.send_message(f"🔄 Rerolled! New winner: <@{winner}>! Congratulations!", ephemeral=False)
 
 class Giveaways(commands.Cog):
     category = 'utility'
@@ -46,163 +72,209 @@ class Giveaways(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = bot.db_manager
-        self.giveaway_check_loop.start()
+        self._ending = set()
 
     async def cog_load(self):
         self.bot.add_view(GiveawayView(self.bot))
+        self.giveaway_check_loop.start()
 
     def cog_unload(self):
         self.giveaway_check_loop.cancel()
 
-    @giveaway_check_loop.before_loop
-    async def before_giveaway_check(self):
-        await self.bot.wait_until_ready()
-
-    async def _resolve_time(self, time_str):
-        match = re.match(r"(\d+)([smhd])", time_str.lower())
-        if not match: return None
-        amount = int(match.group(1))
-        unit = match.group(2)
-        if unit == 's': return amount
-        if unit == 'm': return amount * 60
-        if unit == 'h': return amount * 3600
-        if unit == 'd': return amount * 86400
-        return None
-
     @tasks.loop(seconds=10)
     async def giveaway_check_loop(self):
         now = int(time.time())
-        active_giveaways = await self.db.find('giveaways', {'active': True})
-        
-        for gw in active_giveaways:
-            if gw['end_at'] <= now:
-                await self._end_giveaway(gw)
+        active = await self.db.find('giveaways', {'active': True})
+        for gw in active:
+            if gw['end_at'] <= now and gw['_id'] not in self._ending:
+                self._ending.add(gw['_id'])
+                self.bot.loop.create_task(self._safe_end(gw))
+
+    @giveaway_check_loop.before_loop
+    async def before_giveaway_check_loop(self):
+        await self.bot.wait_until_ready()
+
+    async def _safe_end(self, gw_data):
+        try:
+            await self._end_giveaway(gw_data)
+        except Exception as e:
+            print(f"Giveaways: Error ending giveaway {gw_data['_id']}: {e}")
+        finally:
+            self._ending.discard(gw_data['_id'])
+
+    def _resolve_time(self, time_str):
+        match = re.match(r"(\d+)([smhd])", time_str.lower())
+        if not match:
+            return None
+        amount = int(match.group(1))
+        unit = match.group(2)
+        multipliers = {'s': 1, 'm': 60, 'h': 3600, 'd': 86400}
+        return amount * multipliers[unit]
+
+    def _build_pool(self, entries, bonus_roles, guild):
+        pool = []
+        for uid in entries:
+            member = guild.get_member(uid)
+            mult = 1
+            if member:
+                for r_id, m in bonus_roles.items():
+                    if any(role.id == int(r_id) for role in member.roles):
+                        mult = max(mult, m)
+            pool.extend([uid] * mult)
+        return pool
+
+    def _pick_winners(self, pool, count):
+        winners = []
+        pool = list(pool)
+        while len(winners) < count and pool:
+            w = random.choice(pool)
+            winners.append(w)
+            pool = [u for u in pool if u != w]
+        return winners
 
     async def _end_giveaway(self, gw_data):
         guild = self.bot.get_guild(gw_data['guild_id'])
-        if not guild: return
-        
-        channel = guild.get_channel(gw_data['channel_id'])
-        if not channel: return
-        
-        try:
-            message = await channel.fetch_message(gw_data['_id'])
-        except: 
-            await self.db.update_one('giveaways', {'_id': gw_data['_id']}, {'active': False}, upsert=True)
+        if not guild:
+            await self.db.update_one('giveaways', {'_id': gw_data['_id']}, {'active': False})
             return
 
-        entries = gw_data.get('entries', [])
-        winners = []
-        
-        if len(entries) > 0:
-            winner_count = min(len(set(entries)), gw_data['winner_count'])
-            bonus_roles = gw_data.get('bonus_roles', {})
-            
-            final_pool = []
-            for uid in entries:
-                member = guild.get_member(uid)
-                mult = 1
-                if member:
-                    for r_id, m in bonus_roles.items():
-                        if any(role.id == int(r_id) for role in member.roles):
-                            mult = max(mult, m)
-                final_pool.extend([uid] * mult)
-            
-            while len(winners) < winner_count and final_pool:
-                w = random.choice(final_pool)
-                winners.append(w)
-                final_pool = [u for u in final_pool if u != w]
-        
-        winners_mentions = ", ".join([f"<@{w_id}>" for w_id in winners])
-        
-        embed = message.embeds[0]
-        embed.color = discord.Color.red()
-        embed.description = f"**Prize:** {gw_data['prize']}\n**Winners:** {winners_mentions if winners else 'None'}"
-        
-        req_info = ""
+        channel = guild.get_channel(gw_data['channel_id'])
+        if not channel:
+            await self.db.update_one('giveaways', {'_id': gw_data['_id']}, {'active': False})
+            return
+
+        try:
+            message = await channel.fetch_message(gw_data['_id'])
+        except (discord.NotFound, discord.Forbidden):
+            await self.db.update_one('giveaways', {'_id': gw_data['_id']}, {'active': False})
+            return
+
+        entries = list(set(gw_data.get('entries', [])))
+        bonus_roles = gw_data.get('bonus_roles', {})
+        winner_count = min(len(entries), gw_data['winner_count'])
+
+        pool = self._build_pool(entries, bonus_roles, guild)
+        winners = self._pick_winners(pool, winner_count)
+        winners_mentions = ", ".join([f"<@{w}>" for w in winners])
+
+        embed = discord.Embed(
+            title=f"🎉 Giveaway Ended — {gw_data['prize']}",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        embed.description = f"**Prize:** {gw_data['prize']}\n**Winners:** {winners_mentions if winners else 'No winners'}"
         if gw_data.get('required_roles'):
-            req_info = "\n**Requirements:** " + ", ".join([f"<@&{r_id}>" for r_id in gw_data['required_roles']])
-        
-        embed.description += req_info
-        embed.set_footer(text=f"Ended at • {datetime.datetime.fromtimestamp(gw_data['end_at']).strftime('%Y-%m-%d %H:%M')}")
-        
-        await message.edit(embed=embed, view=None)
-        
+            embed.description += "\n**Requirements:** " + ", ".join([f"<@&{r}>" for r in gw_data['required_roles']])
+        embed.add_field(name="Total Entries", value=f"`{len(entries)}`", inline=True)
+        embed.add_field(name="Ended", value=f"<t:{gw_data['end_at']}:R>", inline=True)
+        embed.set_footer(text=f"Giveaway ID: {gw_data['_id']}")
+
+        end_view = GiveawayEndView(self.bot, gw_data['_id'], guild.id, channel.id)
+
+        try:
+            await message.edit(embed=embed, view=end_view)
+        except Exception:
+            pass
+
         if winners:
-            announcement = f"{self.bot.e.giveaway} Congratulations {winners_mentions}! You won **{gw_data['prize']}**!"
-            await channel.send(announcement)
+            await channel.send(
+                f"🎉 Congratulations {winners_mentions}! You won **{gw_data['prize']}**!",
+                reference=message
+            )
             for w_id in winners:
                 try:
                     user = await self.bot.fetch_user(w_id)
-                    await user.send(embed=self.bot.embed_manager.success(f"You won **{gw_data['prize']}** in **{guild.name}**!", title="Giveaway Winner!"))
-                except: pass
+                    await user.send(embed=self.bot.embed_manager.success(
+                        f"You won **{gw_data['prize']}** in **{guild.name}**!\n[Jump to giveaway]({message.jump_url})",
+                        title="🎉 You Won!"
+                    ))
+                except Exception:
+                    pass
         else:
-            await channel.send(f"{self.bot.e.giveaway} No one entered the giveaway for **{gw_data['prize']}**.")
+            await channel.send(
+                f"😔 No one entered the giveaway for **{gw_data['prize']}**.",
+                reference=message
+            )
 
         log_cog = self.bot.get_cog('Logging')
         if log_cog:
             log_embed = discord.Embed(
-                title="Giveaway Ended", 
-                description=f"**Prize:** {gw_data['prize']}\n**Winners:** {winners_mentions if winners else 'None'}", 
-                color=discord.Color.red(), 
+                title="Giveaway Ended",
+                description=f"**Prize:** {gw_data['prize']}\n**Winners:** {winners_mentions if winners else 'None'}\n**Entries:** `{len(entries)}`",
+                color=discord.Color.red(),
                 timestamp=discord.utils.utcnow()
             )
             await log_cog.log_giveaways(guild, log_embed)
 
-        await self.db.update_one('giveaways', {'_id': gw_data['_id']}, {'active': False, 'winners': winners}, upsert=True)
+        await self.db.update_one('giveaways', {'_id': gw_data['_id']}, {'active': False, 'winners': winners})
 
     @commands.group(name='gw', aliases=['giveaway'], invoke_without_command=True, help='Giveaway management commands.')
     async def gw_group(self, ctx):
-        await ctx.send_help(ctx.command)
+        config = await self.db.find_one('giveaways', {'guild_id': ctx.guild.id, 'active': True})
+        if not config:
+            return await ctx.send_help(ctx.command)
+        await ctx.invoke(self.gw_list)
 
-    @gw_group.command(name='start', help='Start a giveaway. Flags: --req @Role, --bonus @Role:multiplier')
+    @gw_group.command(name='start', help='Start a giveaway. Flags: --req @Role, --bonus @Role:multiplier, --host @User')
     @commands.has_permissions(manage_guild=True)
     async def gw_start(self, ctx, duration: str, winners: int, *, args: str):
         prize = args
         req_roles = []
         bonus_roles = {}
+        host = ctx.author
 
-        req_matches = re.findall(r"--req\s+<@&?(\d+)>", args)
-        for r_id in req_matches:
+        host_match = re.search(r"--host\s+<@!?(\d+)>", args)
+        if host_match:
+            host_id = int(host_match.group(1))
+            host = ctx.guild.get_member(host_id) or ctx.author
+            prize = re.sub(r"--host\s+<@!?\d+>", "", prize)
+
+        for r_id in re.findall(r"--req\s+<@&?(\d+)>", args):
             req_roles.append(int(r_id))
-            prize = prize.replace(f"--req <@&{r_id}>", "").replace(f"--req <@!{r_id}>", "").replace(f"--req <@{r_id}>", "")
+            prize = re.sub(rf"--req\s+<@&?{r_id}>", "", prize)
 
-        bonus_matches = re.findall(r"--bonus\s+<@&?(\d+)>:(\d+)", args)
-        for r_id, mult in bonus_matches:
+        for r_id, mult in re.findall(r"--bonus\s+<@&?(\d+)>:(\d+)", args):
             bonus_roles[r_id] = int(mult)
-            prize = prize.replace(f"--bonus <@&{r_id}>:{mult}", "").replace(f"--bonus <@!{r_id}>:{mult}", "").replace(f"--bonus <@{r_id}>:{mult}", "")
+            prize = re.sub(rf"--bonus\s+<@&?{r_id}>:{mult}", "", prize)
 
         prize = prize.strip()
-        if not prize: return await ctx.error("You must provide a prize!")
+        if not prize:
+            return await ctx.error("You must provide a prize!")
 
-        seconds = await self._resolve_time(duration)
-        if not seconds: return await ctx.error("Invalid duration format! Use `10s`, `5m`, `1h`, etc.")
-        if winners < 1: return await ctx.error("Winner count must be at least 1.")
+        seconds = self._resolve_time(duration)
+        if not seconds:
+            return await ctx.error("Invalid duration. Use `10s`, `5m`, `2h`, `1d`.")
+        if winners < 1:
+            return await ctx.error("Winner count must be at least 1.")
+        if winners > 20:
+            return await ctx.error("Winner count cannot exceed 20.")
 
         end_at = int(time.time()) + seconds
-        
-        desc = (
-            f"Click the button below to enter!\n\n"
-            f"**Prize:** {prize}\n"
+
+        embed = discord.Embed(
+            title=f"🎉 {prize}",
+            color=discord.Color.gold(),
+            timestamp=datetime.datetime.fromtimestamp(end_at)
+        )
+        embed.description = (
+            f"Click the button to enter!\n\n"
             f"**Ends:** <t:{end_at}:R> (<t:{end_at}:f>)\n"
-            f"**Winners:** {winners}"
+            f"**Winners:** `{winners}`\n"
+            f"**Hosted by:** {host.mention}"
         )
-
         if req_roles:
-            desc += "\n**Requirements:** " + ", ".join([f"<@&{r_id}>" for r_id in req_roles])
-        
+            embed.add_field(name="Requirements", value=" ".join([f"<@&{r}>" for r in req_roles]), inline=False)
         if bonus_roles:
-            desc += "\n**Bonus Entries:** " + ", ".join([f"<@&{r_id}> (**{m}x**)" for r_id, m in bonus_roles.items()])
+            embed.add_field(
+                name="Bonus Entries",
+                value="\n".join([f"<@&{r}>: **{m}x**" for r, m in bonus_roles.items()]),
+                inline=False
+            )
+        embed.set_footer(text="Ends at")
 
-        embed = self.bot.embed_manager.generic(
-            description=desc,
-            title=f"{self.bot.e.giveaway} Giveaway Start"
-        )
-        embed.set_footer(text="Good luck!")
-        
         view = GiveawayView(self.bot)
         msg = await ctx.send(embed=embed, view=view)
-        
+
         gw_data = {
             '_id': msg.id,
             'guild_id': ctx.guild.id,
@@ -210,6 +282,7 @@ class Giveaways(commands.Cog):
             'prize': prize,
             'winner_count': winners,
             'end_at': end_at,
+            'host_id': host.id,
             'entries': [],
             'active': True,
             'winners': [],
@@ -220,40 +293,132 @@ class Giveaways(commands.Cog):
 
         log_cog = self.bot.get_cog('Logging')
         if log_cog:
-            log_embed = discord.Embed(title="Giveaway Started", description=f"**Prize:** {prize}\n**Channel:** {ctx.channel.mention}\n**Winners:** {winners}\n**Ends:** <t:{end_at}:R>", color=discord.Color.green(), timestamp=discord.utils.utcnow())
+            log_embed = discord.Embed(
+                title="Giveaway Started",
+                description=f"**Prize:** {prize}\n**Channel:** {ctx.channel.mention}\n**Winners:** {winners}\n**Host:** {host.mention}\n**Ends:** <t:{end_at}:R>",
+                color=discord.Color.green(),
+                timestamp=discord.utils.utcnow()
+            )
             await log_cog.log_giveaways(ctx.guild, log_embed)
 
-    @gw_group.command(name='reroll', help='Reroll a finished giveaway.')
+    @gw_group.command(name='reroll', help='Reroll winners for a finished giveaway.')
     @commands.has_permissions(manage_guild=True)
-    async def gw_reroll(self, ctx, message_id: int):
+    async def gw_reroll(self, ctx, message_id: int, count: int = 1):
         gw = await self.db.find_one('giveaways', {'_id': message_id})
-        if not gw: return await ctx.error("Giveaway not found.")
-        if gw['active']: return await ctx.error("That giveaway is still running!")
+        if not gw:
+            return await ctx.error("Giveaway not found.")
+        if gw['active']:
+            return await ctx.error("That giveaway is still running!")
+        if count < 1 or count > 20:
+            return await ctx.error("Reroll count must be between 1 and 20.")
 
-        entries = gw.get('entries', [])
-        if not entries: return await ctx.error("No entries found for this giveaway.")
-        
-        winner = random.choice(entries)
-        await ctx.success(f"New winner for **{gw['prize']}**: <@{winner}>!")
+        entries = list(set(gw.get('entries', [])))
+        if not entries:
+            return await ctx.error("No entries to reroll from.")
+
+        guild = ctx.guild
+        bonus_roles = gw.get('bonus_roles', {})
+        pool = self._build_pool(entries, bonus_roles, guild)
+        winners = self._pick_winners(pool, min(count, len(entries)))
+        mentions = ", ".join([f"<@{w}>" for w in winners])
+
+        await ctx.success(f"🔄 Rerolled **{gw['prize']}**!\nNew winner(s): {mentions}")
 
     @gw_group.command(name='end', help='End an active giveaway early.')
     @commands.has_permissions(manage_guild=True)
     async def gw_end(self, ctx, message_id: int):
         gw = await self.db.find_one('giveaways', {'_id': message_id})
-        if not gw: return await ctx.error("Giveaway not found.")
-        if not gw['active']: return await ctx.error("Giveaway is already finished.")
-        
-        gw['end_at'] = int(time.time())
-        await self._end_giveaway(gw)
-        await ctx.success("Giveaway ended early.")
+        if not gw:
+            return await ctx.error("Giveaway not found.")
+        if not gw['active']:
+            return await ctx.error("Giveaway is already finished.")
+        if gw['_id'] in self._ending:
+            return await ctx.error("This giveaway is already being processed.")
 
-    @gw_group.command(name='list', help='List all active giveaways.')
+        gw['end_at'] = int(time.time())
+        self._ending.add(gw['_id'])
+        self.bot.loop.create_task(self._safe_end(gw))
+        await ctx.success("Giveaway is being ended now.")
+
+    @gw_group.command(name='cancel', help='Cancel an active giveaway without picking winners.')
+    @commands.has_permissions(manage_guild=True)
+    async def gw_cancel(self, ctx, message_id: int):
+        gw = await self.db.find_one('giveaways', {'_id': message_id})
+        if not gw:
+            return await ctx.error("Giveaway not found.")
+        if not gw['active']:
+            return await ctx.error("Giveaway is already finished.")
+
+        await self.db.update_one('giveaways', {'_id': message_id}, {'active': False})
+
+        channel = ctx.guild.get_channel(gw['channel_id'])
+        if channel:
+            try:
+                msg = await channel.fetch_message(message_id)
+                embed = msg.embeds[0]
+                embed.color = discord.Color.greyple()
+                embed.title = f"❌ Cancelled — {gw['prize']}"
+                await msg.edit(embed=embed, view=None)
+            except Exception:
+                pass
+
+        await ctx.success(f"Giveaway for **{gw['prize']}** has been cancelled.")
+
+    @gw_group.command(name='list', help='List all active giveaways in this server.')
     async def gw_list(self, ctx):
         active = await self.db.find('giveaways', {'guild_id': ctx.guild.id, 'active': True})
-        if not active: return await ctx.info("No active giveaways in this server.")
-        
-        desc = "\n".join([f"• **{g['prize']}** - <t:{g['end_at']}:R> (ID: `{g['_id']}`)" for g in active])
-        await ctx.embed(desc, title=f"Active Giveaways ({len(active)})")
+        if not active:
+            return await ctx.info("No active giveaways in this server.")
+
+        embed = self.bot.embed_manager.generic(
+            description="\n".join([
+                f"• **{g['prize']}** — ends <t:{g['end_at']}:R> | `{len(g.get('entries', []))}` entries | ID: `{g['_id']}`"
+                for g in active
+            ]),
+            title=f"Active Giveaways ({len(active)})"
+        )
+        await ctx.send(embed=embed)
+
+    @gw_group.command(name='info', help='View detailed information about a giveaway.')
+    async def gw_info(self, ctx, message_id: int):
+        gw = await self.db.find_one('giveaways', {'_id': message_id})
+        if not gw:
+            return await ctx.error("Giveaway not found.")
+
+        entries = list(set(gw.get('entries', [])))
+        host = ctx.guild.get_member(gw.get('host_id')) or f"<@{gw.get('host_id', 'Unknown')}>"
+        status = "🟢 Active" if gw['active'] else "🔴 Ended"
+
+        embed = self.bot.embed_manager.generic(
+            description=(
+                f"**Prize:** {gw['prize']}\n"
+                f"**Status:** {status}\n"
+                f"**Host:** {host.mention if isinstance(host, discord.Member) else host}\n"
+                f"**Winners:** `{gw['winner_count']}`\n"
+                f"**Entries:** `{len(entries)}`\n"
+                f"**Ends:** <t:{gw['end_at']}:R>"
+            ),
+            title=f"Giveaway Info"
+        )
+
+        if not gw['active'] and gw.get('winners'):
+            embed.add_field(
+                name="Winners",
+                value=", ".join([f"<@{w}>" for w in gw['winners']]),
+                inline=False
+            )
+        if gw.get('required_roles'):
+            embed.add_field(
+                name="Requirements",
+                value=" ".join([f"<@&{r}>" for r in gw['required_roles']]),
+                inline=False
+            )
+
+        channel = ctx.guild.get_channel(gw['channel_id'])
+        if channel:
+            embed.add_field(name="Channel", value=channel.mention, inline=True)
+
+        await ctx.send(embed=embed)
 
 async def setup(bot):
     await bot.add_cog(Giveaways(bot))
