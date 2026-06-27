@@ -181,7 +181,15 @@ class DatabaseManager:
             is_new = not bool(existing)
             if any(k.startswith('$') for k in update):
                 if '$set' in update:
-                    existing.update(update['$set'])
+                    for k, v in update['$set'].items():
+                        if '.' in k:
+                            parts = k.split('.')
+                            d = existing
+                            for part in parts[:-1]:
+                                d = d.setdefault(part, {})
+                            d[parts[-1]] = v
+                        else:
+                            existing[k] = v
                 if '$setOnInsert' in update and is_new:
                     existing.update(update['$setOnInsert'])
                 if '$inc' in update:
@@ -206,7 +214,17 @@ class DatabaseManager:
                             existing[k].remove(v)
                 if '$unset' in update:
                     for k in update['$unset']:
-                        if k in existing:
+                        if '.' in k:
+                            parts = k.split('.')
+                            d = existing
+                            for part in parts[:-1]:
+                                if not isinstance(d, dict) or part not in d:
+                                    d = None
+                                    break
+                                d = d[part]
+                            if d and isinstance(d, dict) and parts[-1] in d:
+                                del d[parts[-1]]
+                        elif k in existing:
                             del existing[k]
             else:
                 existing.update(update)
