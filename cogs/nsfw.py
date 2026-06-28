@@ -287,12 +287,6 @@ class NSFW(commands.Cog):
     @commands.command(name='gonewild', aliases=['gwild'], help="Fetch NSFW gonewild content.")
     async def gonewild(self, ctx): await self._handle_nsfw(ctx, 'gonewild')
 
-    @commands.command(name='ass_irl', help="Fetch NSFW ass_irl content.")
-    async def ass_irl(self, ctx): await self._handle_nsfw(ctx, 'ass')
-
-    @commands.command(name='pussy_irl', help="Fetch NSFW pussy_irl content.")
-    async def pussy_irl(self, ctx): await self._handle_nsfw(ctx, 'pussy')
-
     @commands.command(name='bondage', help="Fetch NSFW bondage content.")
     async def bondage_cmd(self, ctx): await self._handle_nsfw(ctx, 'bondage')
 
@@ -301,9 +295,6 @@ class NSFW(commands.Cog):
 
     @commands.command(name='masturbation', help="Fetch NSFW masturbation content.")
     async def masturbation(self, ctx): await self._handle_nsfw(ctx, 'solo')
-
-    @commands.command(name='foot', help="Fetch NSFW foot content.")
-    async def foot_nsfw(self, ctx): await self._handle_nsfw(ctx, 'feet')
 
     @commands.command(name='nsfwavatar', help="Fetch NSFW nsfwavatar content.")
     async def nsfw_avatar(self, ctx): await self._handle_nsfw(ctx, 'hentai')
@@ -318,21 +309,8 @@ class NSFW(commands.Cog):
     async def kuni_cmd(self, ctx, target: discord.Member):
         await self._handle_nsfw(ctx, 'pussy', target, 'performs cunnilingus on')
 
-    @commands.command(name='tits_gif', help="Fetch NSFW tits_gif content.")
-    async def tits_gif(self, ctx): await self._handle_nsfw(ctx, 'pgif')
-
-    @commands.command(name='anal_gif', help="Fetch NSFW anal_gif content.")
-    async def anal_gif(self, ctx, target: discord.Member):
-        await self._handle_nsfw(ctx, 'anal', target, 'does animated anal with')
-
     @commands.command(name='vagina', help="Fetch NSFW vagina content.")
     async def vagina_cmd(self, ctx): await self._handle_nsfw(ctx, 'pussy')
-
-    @commands.command(name='boobs_gif', help="Fetch NSFW boobs_gif content.")
-    async def boobs_gif(self, ctx): await self._handle_nsfw(ctx, 'hboobs')
-
-    @commands.command(name='pussy_gif', help="Fetch NSFW pussy_gif content.")
-    async def pussy_gif(self, ctx): await self._handle_nsfw(ctx, 'pgif')
 
     @commands.command(name='titssuck', help="Fetch NSFW titssuck content.")
     async def tits_suck(self, ctx, target: discord.Member):
@@ -345,24 +323,6 @@ class NSFW(commands.Cog):
     @commands.command(name='eroneko', help="Fetch NSFW eroneko content.")
     async def ero_neko(self, ctx): await self._handle_nsfw(ctx, 'neko')
 
-    @commands.command(name='yuri_gif', help="Fetch NSFW yuri_gif content.")
-    async def yuri_gif(self, ctx): await self._handle_nsfw(ctx, 'lesbian')
-
-    @commands.command(name='cum_gif', help="Fetch NSFW cum_gif content.")
-    async def cum_gif(self, ctx, target: discord.Member):
-        await self._handle_nsfw(ctx, 'cum', target, 'cums on')
-
-    @commands.command(name='feet_gif', help="Fetch NSFW feet_gif content.")
-    async def feet_gif(self, ctx): await self._handle_nsfw(ctx, 'feet')
-
-    @commands.command(name='fuck_gif', help="Fetch NSFW fuck_gif content.")
-    async def fuck_gif(self, ctx, target: discord.Member):
-        await self._handle_nsfw(ctx, 'fuck', target, 'fucks')
-
-    @commands.command(name='blowjob_gif', help="Fetch NSFW blowjob_gif content.")
-    async def blowjob_gif(self, ctx, target: discord.Member):
-        await self._handle_nsfw(ctx, 'bj', target, 'gives an animated blowjob to')
-
     @commands.command(name='gasm', help="Fetch NSFW gasm content.")
     async def gasm_cmd(self, ctx): await self._handle_nsfw(ctx, 'hentai')
 
@@ -370,37 +330,14 @@ class NSFW(commands.Cog):
     async def oral_gif(self, ctx, target: discord.Member):
         await self._handle_nsfw(ctx, 'bj', target, 'performs oral on')
 
-    @commands.command(name='solo_gif', help="Fetch NSFW solo_gif content.")
-    async def solo_gif(self, ctx): await self._handle_nsfw(ctx, 'solo')
-
-    @commands.command(name='lesbian_gif', help="Fetch NSFW lesbian_gif content.")
-    async def lesbian_gif(self, ctx, target: discord.Member):
-        await self._handle_nsfw(ctx, 'lesbian', target, 'does animated lesbian things with')
-
     @commands.command(name='handcuffs', help="Fetch NSFW handcuffs content.")
     async def handcuffs_cmd(self, ctx): await self._handle_nsfw(ctx, 'bondage')
 
     @commands.command(name='uniform', help="Fetch NSFW uniform content.")
     async def uniform_cmd(self, ctx): await self._handle_nsfw(ctx, 'hentai')
 
-    @commands.command(name='spank_gif', help="Fetch NSFW spank_gif content.")
-    async def spank_gif_cmd(self, ctx, target: discord.Member):
-        await self._handle_nsfw(ctx, 'spank', target, 'spanks')
-
-    @commands.command(name='masturbate_gif', help="Fetch NSFW masturbate_gif content.")
-    async def masturbate_gif_cmd(self, ctx): await self._handle_nsfw(ctx, 'solo')
-
     @commands.command(name='lewd', help="Fetch NSFW lewd content.")
     async def lewd_cmd(self, ctx): await self._handle_nsfw(ctx, 'hentai')
-
-    @commands.command(name='hentai_gif', help="Fetch NSFW hentai_gif content.")
-    async def hentai_gif_cmd(self, ctx): await self._handle_nsfw(ctx, 'hentai')
-
-    @commands.command(name='futanari_gif', help="Fetch NSFW futanari_gif content.")
-    async def futanari_gif_cmd(self, ctx): await self._handle_nsfw(ctx, 'futanari')
-
-    @commands.command(name='cosplay_gif', help="Fetch NSFW cosplay_gif content.")
-    async def cosplay_gif_cmd(self, ctx): await self._handle_nsfw(ctx, 'cosplay')
 
     @commands.command(name='paizuri', help="Fetch NSFW paizuri content.")
     async def paizuri_cmd(self, ctx, target: discord.Member = None):
@@ -410,193 +347,14 @@ class NSFW(commands.Cog):
     async def creampie_cmd(self, ctx, target: discord.Member = None):
         await self._handle_nsfw(ctx, 'creampie', target, 'creampies')
 
-    @commands.command(name='vagina_gif', help="Fetch NSFW vagina_gif content.")
-    async def vagina_gif(self, ctx): await self._handle_nsfw(ctx, 'pgif')
-
-    @commands.command(name='paizuri_gif', help="Fetch NSFW paizuri_gif content.")
-    async def paizuri_gif(self, ctx): await self._handle_nsfw(ctx, 'pgif')
-
-    @commands.command(name='creampie_gif', help="Fetch NSFW creampie_gif content.")
-    async def creampie_gif(self, ctx): await self._handle_nsfw(ctx, 'pgif')
-
-    @commands.command(name='tentacle_gif', help="Fetch NSFW tentacle_gif content.")
-    async def tentacle_gif(self, ctx): await self._handle_nsfw(ctx, 'hentai')
-
-    @commands.command(name='bdsm_gif', help="Fetch NSFW bdsm_gif content.")
-    async def bdsm_gif(self, ctx): await self._handle_nsfw(ctx, 'bondage')
-
-    @commands.command(name='bondage_gif', help="Fetch NSFW bondage_gif content.")
-    async def bondage_gif(self, ctx): await self._handle_nsfw(ctx, 'bondage')
-
-    @commands.command(name='ero_gif', help="Fetch NSFW ero_gif content.")
-    async def ero_gif(self, ctx): await self._handle_nsfw(ctx, 'hentai')
-
-    @commands.command(name='femdom_gif', help="Fetch NSFW femdom_gif content.")
-    async def femdom_gif(self, ctx): await self._handle_nsfw(ctx, 'hentai')
-
-    @commands.command(name='hentai_neko', help="Fetch NSFW hentai_neko content.")
-    async def hentai_neko(self, ctx): await self._handle_nsfw(ctx, 'neko')
-
-    @commands.command(name='hentai_trap', help="Fetch NSFW hentai_trap content.")
-    async def hentai_trap(self, ctx): await self._handle_nsfw(ctx, 'trap')
-
-    @commands.command(name='hentai_waifu', help="Fetch NSFW hentai_waifu content.")
-    async def hentai_waifu(self, ctx): await self._handle_nsfw(ctx, 'waifu')
-
-    @commands.command(name='real_lesbian', help="Fetch NSFW real_lesbian content.")
-    async def real_lesbian(self, ctx): await self._handle_nsfw(ctx, 'lesbian')
-
-    @commands.command(name='real_blowjob', help="Fetch NSFW real_blowjob content.")
-    async def real_blowjob(self, ctx): await self._handle_nsfw(ctx, 'ass')
-
-    @commands.command(name='real_cum', help="Fetch NSFW real_cum content.")
-    async def real_cum(self, ctx): await self._handle_nsfw(ctx, 'cum')
-
-    @commands.command(name='real_anal', help="Fetch NSFW real_anal content.")
-    async def real_anal(self, ctx): await self._handle_nsfw(ctx, 'anal')
-
-    @commands.command(name='real_solo', help="Fetch NSFW real_solo content.")
-    async def real_solo(self, ctx): await self._handle_nsfw(ctx, 'solo')
-
-    @commands.command(name='real_spank', help="Fetch NSFW real_spank content.")
-    async def real_spank(self, ctx): await self._handle_nsfw(ctx, 'spank')
-
-    @commands.command(name='real_threesome', help="Fetch NSFW real_threesome content.")
-    async def real_threesome(self, ctx): await self._handle_nsfw(ctx, 'threesome')
-
     @commands.command(name='ecchi', help="Fetch NSFW ecchi content.")
     async def ecchi(self, ctx): await self._handle_nsfw(ctx, 'hentai')
-
-    @commands.command(name='lewd_kitsune', help="Fetch NSFW lewd_kitsune content.")
-    async def lewd_kitsune(self, ctx): await self._handle_nsfw(ctx, 'kitsune')
-
-    @commands.command(name='lewd_kemonomimi', help="Fetch NSFW lewd_kemonomimi content.")
-    async def lewd_kemonomimi(self, ctx): await self._handle_nsfw(ctx, 'kemonomimi')
-
-    @commands.command(name='lewd_holo', help="Fetch NSFW lewd_holo content.")
-    async def lewd_holo(self, ctx): await self._handle_nsfw(ctx, 'holo')
-
-    @commands.command(name='midriff_gif', help="Fetch NSFW midriff_gif content.")
-    async def midriff_gif(self, ctx): await self._handle_nsfw(ctx, 'hentai')
-
-    @commands.command(name='hentai_master', help="Fetch NSFW hentai_master content.")
-    async def h_master(self, ctx): await self._handle_nsfw(ctx, 'hentai')
-
-    @commands.command(name='nsfw_kitsune', help="Fetch NSFW nsfw_kitsune content.")
-    async def n_kitsune(self, ctx): await self._handle_nsfw(ctx, 'kitsune')
-
-    @commands.command(name='nsfw_holo', help="Fetch NSFW nsfw_holo content.")
-    async def n_holo(self, ctx): await self._handle_nsfw(ctx, 'holo')
-
-    @commands.command(name='lewd_hentai', help="Fetch NSFW lewd_hentai content.")
-    async def l_hentai(self, ctx): await self._handle_nsfw(ctx, 'hentai')
-
-    @commands.command(name='hentai_4k', help="Fetch NSFW hentai_4k content.")
-    async def h_4k(self, ctx): await self._handle_nsfw(ctx, '4k')
-
-    @commands.command(name='hentai_solo', help="Fetch NSFW hentai_solo content.")
-    async def h_solo(self, ctx): await self._handle_nsfw(ctx, 'solo')
-
-    @commands.command(name='hentai_anal', help="Fetch NSFW hentai_anal content.")
-    async def h_anal(self, ctx): await self._handle_nsfw(ctx, 'anal')
-
-    @commands.command(name='hentai_bj', help="Fetch NSFW hentai_bj content.")
-    async def h_bj(self, ctx): await self._handle_nsfw(ctx, 'bj')
-
-    @commands.command(name='hentai_fuck', help="Fetch NSFW hentai_fuck content.")
-    async def h_fuck(self, ctx): await self._handle_nsfw(ctx, 'fuck')
-
-    @commands.command(name='hentai_pussy', help="Fetch NSFW hentai_pussy content.")
-    async def h_pussy(self, ctx): await self._handle_nsfw(ctx, 'pussy')
-
-    @commands.command(name='hentai_ass', help="Fetch NSFW hentai_ass content.")
-    async def h_ass(self, ctx): await self._handle_nsfw(ctx, 'ass')
-
-    @commands.command(name='hentai_boobs', help="Fetch NSFW hentai_boobs content.")
-    async def h_boobs(self, ctx): await self._handle_nsfw(ctx, 'boobs')
-
-    @commands.command(name='hentai_cum', help="Fetch NSFW hentai_cum content.")
-    async def h_cum(self, ctx): await self._handle_nsfw(ctx, 'cum')
-
-    @commands.command(name='hentai_lesbian', help="Fetch NSFW hentai_lesbian content.")
-    async def h_lesbian(self, ctx): await self._handle_nsfw(ctx, 'lesbian')
-
-    @commands.command(name='hentai_spank', help="Fetch NSFW hentai_spank content.")
-    async def h_spank(self, ctx): await self._handle_nsfw(ctx, 'spank')
-
-    @commands.command(name='hentai_random', help="Fetch NSFW hentai_random content.")
-    async def n_random(self, ctx):
-        cats = ['hentai', 'neko', 'paizuri', 'ass', 'pussy', 'bj', 'fuck', 'solo', 'anal', 'lesbian']
-        await self._handle_nsfw(ctx, random.choice(cats))
-
-    @commands.command(name='hentai2', help="Fetch NSFW hentai2 content.")
-    async def hentai_two(self, ctx): await self._handle_nsfw(ctx, 'hentai')
-
-    @commands.command(name='pussy2', help="Fetch NSFW pussy2 content.")
-    async def pussy_two(self, ctx): await self._handle_nsfw(ctx, 'pussy')
-
-    @commands.command(name='ass2', help="Fetch NSFW ass2 content.")
-    async def ass_two(self, ctx): await self._handle_nsfw(ctx, 'ass')
-
-    @commands.command(name='tentacle2', help="Fetch NSFW tentacle2 content.")
-    async def tentacle_two(self, ctx): await self._handle_nsfw(ctx, 'tentacle')
-
-    @commands.command(name='yaoi2', help="Fetch NSFW yaoi2 content.")
-    async def yaoi_two(self, ctx): await self._handle_nsfw(ctx, 'yaoi')
-
-    @commands.command(name='yuri2', help="Fetch NSFW yuri2 content.")
-    async def yuri_two(self, ctx): await self._handle_nsfw(ctx, 'lesbian')
 
     @commands.command(name='holo', help="Fetch NSFW holo content.")
     async def holo_nsfw(self, ctx): await self._handle_nsfw(ctx, 'holo')
 
     @commands.command(name='kemonomimi', help="Fetch NSFW kemonomimi content.")
     async def kemonomimi_nsfw(self, ctx): await self._handle_nsfw(ctx, 'kemonomimi')
-
-    @commands.command(name='gonewild2', help="Fetch NSFW gonewild2 content.")
-    async def gonewild_two(self, ctx): await self._handle_nsfw(ctx, 'gonewild')
-
-    @commands.command(name='futanari2', help="Fetch NSFW futanari2 content.")
-    async def futanari_two(self, ctx): await self._handle_nsfw(ctx, 'futanari')
-
-    @commands.command(name='cosplay2', help="Fetch NSFW cosplay2 content.")
-    async def cosplay_two(self, ctx): await self._handle_nsfw(ctx, 'cosplay')
-
-    @commands.command(name='paizuri2', help="Fetch NSFW paizuri2 content.")
-    async def paizuri_two(self, ctx): await self._handle_nsfw(ctx, 'paizuri')
-
-    @commands.command(name='creampie2', help="Fetch NSFW creampie2 content.")
-    async def creampie_two(self, ctx): await self._handle_nsfw(ctx, 'creampie')
-
-    @commands.command(name='hthighs', help="Fetch NSFW hthighs content.")
-    async def hthighs_two(self, ctx): await self._handle_nsfw(ctx, 'hentai')
-
-    @commands.command(name='feet2', help="Fetch NSFW feet2 content.")
-    async def feet_two(self, ctx): await self._handle_nsfw(ctx, 'feet')
-
-    @commands.command(name='waifu_nsfw_v2', help="Fetch NSFW waifu_nsfw_v2 content.")
-    async def waifu_nsfw_v2(self, ctx): await self._handle_nsfw(ctx, 'waifu')
-
-    @commands.command(name='neko_nsfw_v2', help="Fetch NSFW neko_nsfw_v2 content.")
-    async def neko_nsfw_v2(self, ctx): await self._handle_nsfw(ctx, 'neko')
-
-    @commands.command(name='bj_v2', help="Fetch NSFW bj_v2 content.")
-    async def bj_v2(self, ctx): await self._handle_nsfw(ctx, 'bj')
-
-    @commands.command(name='cum_v2', help="Fetch NSFW cum_v2 content.")
-    async def cum_v2(self, ctx): await self._handle_nsfw(ctx, 'cum')
-
-    @commands.command(name='anal_v2', help="Fetch NSFW anal_v2 content.")
-    async def anal_v2(self, ctx): await self._handle_nsfw(ctx, 'anal')
-
-    @commands.command(name='pussy_gif_v2', help="Fetch NSFW pussy_gif_v2 content.")
-    async def pussy_gif_v2(self, ctx): await self._handle_nsfw(ctx, 'pussy')
-
-    @commands.command(name='fuck_gif_v2', help="Fetch NSFW fuck_gif_v2 content.")
-    async def fuck_gif_v2(self, ctx): await self._handle_nsfw(ctx, 'fuck')
-
-    @commands.command(name='threesome_gif_v2', help="Fetch NSFW threesome_gif_v2 content.")
-    async def threesome_gif_v2(self, ctx): await self._handle_nsfw(ctx, 'threesome')
 
 async def setup(bot):
     await bot.add_cog(NSFW(bot))

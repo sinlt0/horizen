@@ -10,3 +10,4 @@ markdown2>=2.4
 aiohttp>=3.9
 jishaku>=2.5
 wavelink>=3.0.0
+yt-dlp>=2024.1.0

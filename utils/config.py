@@ -80,12 +80,12 @@ class Config:
     ]
 
     LOFI_STATIONS = {
-            "Groove Salad (Ambient/Downtempo)": "https://ice.somafm.com/groovesalad",
-            "Drone Zone (Atmospheric)": "https://ice.somafm.com/dronezone",
-            "Groove Salad Classic (2000s Chill)": "https://ice.somafm.com/gsclassic",
-            "Space Station Soma (Ambient Electronic)": "https://ice.somafm.com/spacestation",
-            "Deep Space One (Experimental)": "https://ice.somafm.com/deepspaceone",
-            "Beat Blender (Deep House/Downtempo)": "https://ice.somafm.com/beatblender",
-            "Chillhop (Lofi Hip-Hop)": "http://streams.fluxfm.de/Chillhop/mp3-128/streams.fluxfm.de/",
-            "FluxLounge (Chillout)": "http://streams.fluxfm.de/lounge/mp3-128"
-     }       
+        "Groove Salad (Ambient/Downtempo)": "https://ice.somafm.com/groovesalad",
+        "Drone Zone (Atmospheric)": "https://ice.somafm.com/dronezone",
+        "Groove Salad Classic (2000s Chill)": "https://ice.somafm.com/gsclassic",
+        "Space Station Soma (Ambient Electronic)": "https://ice.somafm.com/spacestation",
+        "Deep Space One (Experimental)": "https://ice.somafm.com/deepspaceone",
+        "Beat Blender (Deep House/Downtempo)": "https://ice.somafm.com/beatblender",
+        "Chillhop (Lofi Hip-Hop)": "http://streams.fluxfm.de/Chillhop/mp3-128/streams.fluxfm.de/",
+        "FluxLounge (Chillout)": "http://streams.fluxfm.de/lounge/mp3-128/audio/",
+    }
