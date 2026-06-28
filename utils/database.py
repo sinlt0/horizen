@@ -419,6 +419,19 @@ class DatabaseManager:
             'CREATE TABLE IF NOT EXISTS social_alerts (id BIGINT PRIMARY KEY, data TEXT)',
             'CREATE TABLE IF NOT EXISTS stats_config (id BIGINT PRIMARY KEY, data TEXT)',
             'CREATE TABLE IF NOT EXISTS antinuke_config (id BIGINT PRIMARY KEY, data TEXT)',
+            'CREATE TABLE IF NOT EXISTS custom_commands (id BIGINT PRIMARY KEY, data TEXT)',
+            'CREATE TABLE IF NOT EXISTS reaction_roles (id BIGINT PRIMARY KEY, data TEXT)',
+            'CREATE TABLE IF NOT EXISTS polls (id BIGINT PRIMARY KEY, data TEXT)',
+            'CREATE TABLE IF NOT EXISTS bump_config (id BIGINT PRIMARY KEY, data TEXT)',
+            'CREATE TABLE IF NOT EXISTS birthday_config (id BIGINT PRIMARY KEY, data TEXT)',
+            'CREATE TABLE IF NOT EXISTS birthdays (id VARCHAR(100) PRIMARY KEY, data TEXT)',
+            'CREATE TABLE IF NOT EXISTS counting_config (id BIGINT PRIMARY KEY, data TEXT)',
+            'CREATE TABLE IF NOT EXISTS confession_config (id BIGINT PRIMARY KEY, data TEXT)',
+            'CREATE TABLE IF NOT EXISTS scheduled_messages (id VARCHAR(200) PRIMARY KEY, data TEXT)',
+            'CREATE TABLE IF NOT EXISTS mod_notes (id VARCHAR(100) PRIMARY KEY, data TEXT)',
+            'CREATE TABLE IF NOT EXISTS sticky_messages (id BIGINT PRIMARY KEY, data TEXT)',
+            'CREATE TABLE IF NOT EXISTS reminders (id BIGINT PRIMARY KEY, data TEXT)',
+            'CREATE TABLE IF NOT EXISTS todos (id BIGINT PRIMARY KEY, data TEXT)',
         ]
         for q in queries:
             if db_type == 'mariadb':
