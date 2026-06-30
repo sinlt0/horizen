@@ -432,6 +432,8 @@ class DatabaseManager:
             'CREATE TABLE IF NOT EXISTS sticky_messages (id BIGINT PRIMARY KEY, data TEXT)',
             'CREATE TABLE IF NOT EXISTS reminders (id BIGINT PRIMARY KEY, data TEXT)',
             'CREATE TABLE IF NOT EXISTS todos (id BIGINT PRIMARY KEY, data TEXT)',
+            'CREATE TABLE IF NOT EXISTS reputation (id VARCHAR(100) PRIMARY KEY, data TEXT)',
+            'CREATE TABLE IF NOT EXISTS reputation_config (id BIGINT PRIMARY KEY, data TEXT)',
         ]
         for q in queries:
             if db_type == 'mariadb':

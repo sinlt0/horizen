@@ -130,6 +130,8 @@ class Moderation(commands.Cog):
             return await ctx.error('Timeout duration cannot exceed 28 days.')
         try:
             await member.timeout(delta, reason=f'Mod: {ctx.author} | Reason: {reason}')
+            rep_cog = self.bot.get_cog("ReputationSystem")
+            if rep_cog: rep_cog.award_points_external(ctx.guild.id, member.id, "timeout")
             duration_str = f'{amount}{unit}'
             case_id = await self.log_action(ctx, 'Mute', member, reason, duration_str)
             await ctx.success(f'**{member}** has been muted for {duration_str}. (Case #{case_id})')
@@ -141,6 +143,8 @@ class Moderation(commands.Cog):
     async def unmute(self, ctx, member: discord.Member, *, reason: str='No reason provided'):
         try:
             await member.timeout(None, reason=f'Mod: {ctx.author} | Reason: {reason}')
+            rep_cog = self.bot.get_cog("ReputationSystem")
+            if rep_cog: rep_cog.award_points_external(ctx.guild.id, member.id, "timeout")
             case_id = await self.log_action(ctx, 'Unmute', member, reason)
             await ctx.success(f'**{member}** has been unmuted. (Case #{case_id})')
         except discord.Forbidden:
@@ -156,6 +160,9 @@ class Moderation(commands.Cog):
         warn_count = (res.get('count', 0) if res else 0) + 1
         await self.db.update_one('mod_cases', {'_id': warn_key}, {'count': warn_count}, upsert=True)
         case_id = await self.log_action(ctx, 'Warn', member, reason)
+        rep_cog = self.bot.get_cog('ReputationSystem')
+        if rep_cog:
+            rep_cog.award_points_external(ctx.guild.id, member.id, 'warn')
         await ctx.success(f'**{member}** has been warned. (Total: {warn_count} | Case #{case_id})')
 
     @commands.command(name='warns', aliases=['warnings'], help='View warnings for a member.')

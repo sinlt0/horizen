@@ -34,6 +34,9 @@ class AutoMod(commands.Cog):
 
     async def apply_action(self, message, action, reason):
         await self.bot.punish_user(message.guild, message.author, reason, punishment=action)
+        rep_cog = self.bot.get_cog('ReputationSystem')
+        if rep_cog:
+            rep_cog.award_points_external(message.guild.id, message.author.id, 'automod_hit')
         try: await message.delete()
         except: pass
         if action in ['warn', 'mute']:
