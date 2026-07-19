@@ -9,6 +9,12 @@ import aiohttp
 import random
 import traceback
 
+os.environ.setdefault('JISHAKU_HIDE', 'True')
+os.environ.setdefault('JISHAKU_NO_UNDERSCORE', 'True')
+os.environ.setdefault('JISHAKU_NO_DM_TRACEBACK', 'True')
+os.environ.setdefault('JISHAKU_RETAIN', 'True')
+os.environ.setdefault('JISHAKU_FORCE_PAGINATOR', 'True')
+
 try:
     import certifi
     ca_file = certifi.where()
@@ -58,6 +64,7 @@ class AdvancedBot(commands.Bot):
         self.db_manager = DatabaseManager(self.config)
         self.prefix_manager = PrefixManager(self.db_manager)
         self.dev_manager = DevManager()
+        self._base_owner_ids = set()
         self.premium_manager = PremiumManager(self.db_manager)
         self.emoji_manager = EmojiManager()
         self.e = self.emoji_manager.e
@@ -89,7 +96,16 @@ class AdvancedBot(commands.Bot):
         await self.prefix_manager.initialize_cache()
         self.emoji_manager.load_emojis()
         self.session = aiohttp.ClientSession(headers={'User-Agent': self.config.USER_AGENT})
-        
+
+        owner_ids = await self.refresh_owner_ids()
+        print(f'Owner/Dev IDs with elevated access: {owner_ids}')
+
+        try:
+            await self.load_extension('jishaku')
+            print('Loaded extension: jishaku (owner-only debug/eval tools)')
+        except Exception as e:
+            print(f'Failed to load jishaku: {e}')
+
         await self._load_modules('cogs')
         await self._load_modules('events')
         
@@ -108,9 +124,36 @@ class AdvancedBot(commands.Bot):
         self.add_view(TicketPanelView(self))
         self.add_view(TicketControlView(self))
 
-        print(f'Total commands loaded: {len(self.commands)}')
+        print(f'Total commands loaded: {self.count_all_commands()}')
         try: await self.tree.sync()
         except Exception as e: print(f'Failed to sync commands: {e}')
+
+    async def refresh_owner_ids(self):
+        if not self._base_owner_ids:
+            try:
+                app_info = await self.application_info()
+                if app_info.team:
+                    self._base_owner_ids = {m.id for m in app_info.team.members}
+                else:
+                    self._base_owner_ids = {app_info.owner.id}
+            except Exception as e:
+                print(f'Failed to fetch application owner info: {e}')
+                self._base_owner_ids = set()
+
+        self.owner_id = None
+        self.owner_ids = self._base_owner_ids | self.dev_manager.dev_ids
+        return self.owner_ids
+
+    def count_all_commands(self):
+        total = 0
+        def walk(cmd_list):
+            nonlocal total
+            for cmd in cmd_list:
+                total += 1
+                if isinstance(cmd, commands.Group):
+                    walk(cmd.commands)
+        walk(self.commands)
+        return total
 
     async def _load_modules(self, directory):
         if not os.path.exists(directory): return
@@ -299,7 +342,7 @@ class AdvancedBot(commands.Bot):
             self._website_started = True
         CLR_CYAN, CLR_GREEN, CLR_BLUE, CLR_BOLD, CLR_RESET = '\x1b[36m', '\x1b[32m', '\x1b[34m', '\x1b[1m', '\x1b[0m'
         bot_user, bot_id = str(self.user), str(self.user.id)
-        guild_count, cmd_count = len(self.guilds), len(self.commands)
+        guild_count, cmd_count = len(self.guilds), self.count_all_commands()
         db_type = self.db_manager.primary_type.upper() if self.db_manager else 'UNKNOWN'
         width = 60
         border = '+' + '-' * (width - 2) + '+'
@@ -327,5 +370,12 @@ class AdvancedBot(commands.Bot):
 async def main():
     async with AdvancedBot() as bot:
         await bot.start(bot.config.DISCORD_TOKEN)
+
 if __name__ == '__main__':
+    try:
+        import uvloop
+        uvloop.install()
+        print('uvloop installed — using accelerated event loop.')
+    except ImportError:
+        print('uvloop not available — using default asyncio event loop.')
     asyncio.run(main())

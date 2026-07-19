@@ -43,7 +43,7 @@ class MusicPlayer(wavelink.Player):
         self.update_task = None
         self.rl_manager = RateLimitManager()
         self._last_update = 0
-        self.ctx = None
+        self.text_channel_id = None
 
 
 class FilterMenuView(discord.ui.View):
@@ -57,6 +57,9 @@ class FilterMenuView(discord.ui.View):
             discord.SelectOption(label="Nightcore", value="nightcore", emoji="⚡"),
             discord.SelectOption(label="Vaporwave", value="vaporwave", emoji="🌊"),
             discord.SelectOption(label="8D Audio", value="8d", emoji="🎧"),
+            discord.SelectOption(label="Karaoke (Remove Vocals)", value="karaoke", emoji="🎤"),
+            discord.SelectOption(label="Slowed + Reverb", value="slowreverb", emoji="🎶"),
+            discord.SelectOption(label="Treble Boost", value="treble", emoji="🔈"),
         ]
 
     @discord.ui.select(placeholder="🎛️ Choose an audio filter...")
@@ -75,6 +78,16 @@ class FilterMenuView(discord.ui.View):
             filters.timescale.set(speed=0.8, pitch=0.8, rate=1.0)
         elif val == "8d":
             filters.rotation.set(rotation_hz=0.2)
+        elif val == "karaoke":
+            filters.karaoke.set(level=1.0, mono_level=1.0, filter_band=220.0, filter_width=100.0)
+        elif val == "slowreverb":
+            filters.timescale.set(speed=0.75, pitch=0.95, rate=1.0)
+        elif val == "treble":
+            filters.equalizer.set(bands=[
+                {"band": 8, "gain": 0.3},
+                {"band": 9, "gain": 0.3},
+                {"band": 10, "gain": 0.25},
+            ])
         await self.player.set_filters(filters)
         label = val.capitalize() if val != "reset" else "Filters Reset"
         await interaction.response.send_message(f"{self.bot.e.music_filter} Applied: **{label}**", ephemeral=True)
@@ -178,14 +191,44 @@ class LofiPlayer:
         self.station_name = station_name
         self.url = url
 
+    def _is_native_vc(self):
+        return isinstance(self.voice_client, discord.VoiceClient) and not isinstance(self.voice_client, wavelink.Player)
+
     def is_playing(self):
-        return self.voice_client.is_playing() or self.voice_client.is_paused()
+        if self._is_native_vc():
+            return self.voice_client.is_playing() or self.voice_client.is_paused()
+        return getattr(self.voice_client, 'playing', False)
+
+    async def start(self, resolve_fn=None) -> bool:
+        if resolve_fn:
+            stream_url = await resolve_fn(self.url)
+        else:
+            stream_url = self.url if 'youtube' not in self.url else None
+        if not stream_url:
+            return False
+        try:
+            source = discord.PCMVolumeTransformer(
+                discord.FFmpegPCMAudio(stream_url, **FFMPEG_OPTIONS),
+                volume=0.5
+            )
+            self.voice_client.play(source)
+            return True
+        except Exception as e:
+            print(f'LofiPlayer: start error: {e}')
+            return False
 
     async def stop(self):
-        if self.voice_client.is_playing() or self.voice_client.is_paused():
-            self.voice_client.stop()
-        if self.voice_client.is_connected():
-            await self.voice_client.disconnect()
+        try:
+            if self._is_native_vc():
+                if self.voice_client.is_playing() or self.voice_client.is_paused():
+                    self.voice_client.stop()
+                if self.voice_client.is_connected():
+                    await self.voice_client.disconnect()
+            else:
+                if self.voice_client.connected:
+                    await self.voice_client.disconnect()
+        except Exception as e:
+            print(f'LofiPlayer: stop error: {e}')
 
 
 class LofiSelectView(discord.ui.View):
@@ -239,48 +282,14 @@ class LofiSelectView(discord.ui.View):
         if not vc:
             return await interaction.followup.send("Failed to connect to voice channel.", ephemeral=True)
 
-        stream_url = url
-        if "youtube.com" in url or "youtu.be" in url:
-            try:
-                import yt_dlp
-                ydl_opts = {
-                    'format': 'bestaudio/best',
-                    'quiet': True,
-                    'no_warnings': True,
-                    'source_address': '0.0.0.0',
-                    'live_from_start': False,
-                    'noplaylist': True,
-                }
-                loop = asyncio.get_event_loop()
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=False))
-
-                if info.get('is_live') or info.get('was_live'):
-                    formats = [
-                        f for f in info.get('formats', [])
-                        if f.get('acodec') != 'none'
-                        and f.get('vcodec') == 'none'
-                        and f.get('protocol') in ('https', 'http', 'm3u8_native', 'm3u8')
-                    ]
-                    if not formats:
-                        formats = [f for f in info.get('formats', []) if f.get('acodec') != 'none']
-                    if not formats:
-                        return await interaction.followup.send("No audio stream found in this YouTube URL.", ephemeral=True)
-                    formats.sort(key=lambda f: f.get('abr') or 0, reverse=True)
-                    stream_url = formats[0]['url']
-                else:
-                    stream_url = info.get('url')
-                    if not stream_url:
-                        formats = [f for f in info.get('formats', []) if f.get('acodec') != 'none']
-                        if not formats:
-                            return await interaction.followup.send("No audio stream found in this YouTube URL.", ephemeral=True)
-                        stream_url = formats[0]['url']
-            except Exception as e:
-                return await interaction.followup.send(f"Failed to extract YouTube stream: {e}", ephemeral=True)
+        music_cog = self.bot.get_cog("Music")
+        stream_url = await music_cog._resolve_stream_url(url)
 
         try:
-            source = discord.FFmpegPCMAudio(stream_url, **FFMPEG_OPTIONS)
-            source = discord.PCMVolumeTransformer(source, volume=0.5)
+            source = discord.PCMVolumeTransformer(
+                discord.FFmpegPCMAudio(stream_url, **FFMPEG_OPTIONS),
+                volume=0.5
+            )
             vc.play(source)
         except Exception as e:
             return await interaction.followup.send(f"Failed to start playback: {e}", ephemeral=True)
@@ -307,14 +316,60 @@ class Music(commands.Cog):
 
     async def cog_load(self):
         self._session = aiohttp.ClientSession()
+        self._restored = False
         self.bot.loop.create_task(self._start_nodes())
-        self.bot.loop.create_task(self._restore_sessions())
         self.node_monitor.start()
 
     def cog_unload(self):
         self.node_monitor.cancel()
+        self.lofi_watchdog.cancel()
         if self._session:
             self.bot.loop.create_task(self._session.close())
+
+    async def _stop_lofi_internal(self, guild_id: int):
+        lofi = self._lofi_players.pop(guild_id, None)
+        if lofi:
+            await lofi.stop()
+        await self._save_lofi_state(guild_id)
+
+    @tasks.loop(seconds=30)
+    async def lofi_watchdog(self):
+        for guild_id, lofi in list(self._lofi_players.items()):
+            try:
+                if lofi.is_playing() and lofi.voice_client.is_connected():
+                    continue
+                guild = self.bot.get_guild(guild_id)
+                if not guild:
+                    self._lofi_players.pop(guild_id, None)
+                    continue
+                config = await self.db.find_one('music_config', {'_id': guild_id})
+                if not config or not config.get('lofi_active') or not config.get('lofi_voice_channel'):
+                    self._lofi_players.pop(guild_id, None)
+                    continue
+                vc_channel = guild.get_channel(int(config['lofi_voice_channel']))
+                if not vc_channel or not isinstance(vc_channel, discord.VoiceChannel):
+                    self._lofi_players.pop(guild_id, None)
+                    continue
+                existing = guild.voice_client
+                if existing:
+                    try:
+                        await existing.disconnect(force=True)
+                    except Exception:
+                        pass
+                    await asyncio.sleep(1)
+                vc = await vc_channel.connect(self_deaf=True, timeout=30.0, cls=discord.VoiceClient)
+                new_lofi = LofiPlayer(vc, config.get('lofi_station', 'Unknown'), config['lofi_url'])
+                if await new_lofi.start(resolve_fn=self._resolve_stream_url):
+                    self._lofi_players[guild_id] = new_lofi
+                    print(f'Music: Watchdog restarted lofi for guild {guild_id}')
+                else:
+                    self._lofi_players.pop(guild_id, None)
+            except Exception as e:
+                print(f'Music: Watchdog error for guild {guild_id}: {e}')
+
+    @lofi_watchdog.before_loop
+    async def before_lofi_watchdog(self):
+        await self.bot.wait_until_ready()
 
     async def _save_247_state(self, guild_id: int, enabled: bool, voice_channel_id: int = None, text_channel_id: int = None):
         if enabled:
@@ -339,76 +394,143 @@ class Music(commands.Cog):
                 'lofi_voice_channel': voice_channel_id
             }, upsert=True)
         else:
-            await self.db.update_one('music_config', {'_id': guild_id}, {
+            config = await self.db.find_one('music_config', {'_id': guild_id}) or {}
+            config.update({
                 'lofi_active': False,
                 'lofi_station': None,
                 'lofi_url': None,
                 'lofi_voice_channel': None
-            }, upsert=True)
+            })
+            await self.db.update_one('music_config', {'_id': guild_id}, config, upsert=True)
+
+    async def _wait_for_node(self, timeout=30):
+        for _ in range(timeout * 2):
+            if self._get_best_node():
+                return True
+            await asyncio.sleep(0.5)
+        return False
+
+    async def _resolve_stream_url(self, url):
+        if 'youtube.com' not in url and 'youtu.be' not in url:
+            return url
+        try:
+            import yt_dlp
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'quiet': True,
+                'no_warnings': True,
+                'source_address': '0.0.0.0',
+                'live_from_start': False,
+                'noplaylist': True,
+            }
+            loop = asyncio.get_running_loop()
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=False))
+            if info.get('is_live') or info.get('was_live'):
+                formats = [
+                    f for f in info.get('formats', [])
+                    if f.get('acodec') != 'none'
+                    and f.get('vcodec') == 'none'
+                    and f.get('protocol') in ('https', 'http', 'm3u8_native', 'm3u8')
+                ]
+                if not formats:
+                    formats = [f for f in info.get('formats', []) if f.get('acodec') != 'none']
+                if formats:
+                    formats.sort(key=lambda f: f.get('abr') or 0, reverse=True)
+                    return formats[0]['url']
+            else:
+                return info.get('url') or url
+        except Exception as e:
+            print(f'Music: yt-dlp stream resolve error: {e}')
+        return url
 
     async def _restore_sessions(self):
-        await self.bot.wait_until_ready()
-        await asyncio.sleep(5)
+        print('Music: Starting session restore...')
+        await asyncio.sleep(2)
 
         configs = await self.db.find('music_config', {})
+        print(f'Music: Found {len(configs)} music configs to check.')
+
         for config in configs:
             guild_id = config.get('_id')
+            if not guild_id:
+                continue
+            try:
+                guild_id = int(guild_id)
+            except (TypeError, ValueError):
+                continue
+
             guild = self.bot.get_guild(guild_id)
             if not guild:
+                print(f'Music: Guild {guild_id} not found, skipping.')
                 continue
+
+            print(f'Music: Checking guild {guild_id} — lofi_active={config.get("lofi_active")} vc247_active={config.get("vc247_active")}')
 
             if config.get('lofi_active') and config.get('lofi_voice_channel') and config.get('lofi_url'):
                 try:
-                    vc_channel = guild.get_channel(config['lofi_voice_channel'])
-                    if not vc_channel:
+                    vc_id = int(config['lofi_voice_channel'])
+                    vc_channel = guild.get_channel(vc_id)
+                    if not vc_channel or not isinstance(vc_channel, discord.VoiceChannel):
+                        print(f'Music: Lofi VC {vc_id} not found in guild {guild_id}.')
+                        await self._save_lofi_state(guild_id)
                         continue
-                    vc = await vc_channel.connect(self_deaf=True)
-                    stream_url = config['lofi_url']
-                    if 'youtube.com' in stream_url or 'youtu.be' in stream_url:
+
+                    existing_vc = guild.voice_client
+                    if existing_vc:
                         try:
-                            import yt_dlp
-                            ydl_opts = {'format': 'bestaudio/best', 'quiet': True, 'no_warnings': True, 'source_address': '0.0.0.0', 'live_from_start': False, 'noplaylist': True}
-                            loop = asyncio.get_event_loop()
-                            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                                info = await loop.run_in_executor(None, lambda: ydl.extract_info(stream_url, download=False))
-                            if info.get('is_live') or info.get('was_live'):
-                                formats = [f for f in info.get('formats', []) if f.get('acodec') != 'none' and f.get('vcodec') == 'none' and f.get('protocol') in ('https', 'http', 'm3u8_native', 'm3u8')]
-                                if not formats:
-                                    formats = [f for f in info.get('formats', []) if f.get('acodec') != 'none']
-                                if formats:
-                                    formats.sort(key=lambda f: f.get('abr') or 0, reverse=True)
-                                    stream_url = formats[0]['url']
+                            if isinstance(existing_vc, wavelink.Player):
+                                await existing_vc.disconnect()
                             else:
-                                stream_url = info.get('url') or stream_url
-                        except Exception as e:
-                            print(f"Music: Lofi restore yt-dlp error for guild {guild_id}: {e}")
-                            continue
-                    source = discord.FFmpegPCMAudio(stream_url, **FFMPEG_OPTIONS)
-                    source = discord.PCMVolumeTransformer(source, volume=0.5)
+                                await existing_vc.disconnect(force=True)
+                        except Exception:
+                            pass
+                        await asyncio.sleep(1)
+
+                    stream_url = await self._resolve_stream_url(config['lofi_url'])
+                    vc = await vc_channel.connect(self_deaf=True, timeout=30.0, cls=discord.VoiceClient)
+                    source = discord.PCMVolumeTransformer(
+                        discord.FFmpegPCMAudio(stream_url, **FFMPEG_OPTIONS),
+                        volume=0.5
+                    )
                     vc.play(source)
-                    lofi_player = LofiPlayer(vc, config['lofi_station'], config['lofi_url'])
-                    self._lofi_players[guild_id] = lofi_player
-                    print(f"Music: Restored lofi session for guild {guild_id} ({config['lofi_station']})")
+                    self._lofi_players[guild_id] = LofiPlayer(vc, config.get('lofi_station', 'Unknown'), config['lofi_url'])
+                    print(f"Music: ✅ Restored lofi '{config.get('lofi_station')}' in guild {guild_id} → {vc_channel.name}")
                 except Exception as e:
-                    print(f"Music: Failed to restore lofi for guild {guild_id}: {e}")
+                    print(f'Music: ❌ Failed to restore lofi for guild {guild_id}: {e}')
+                    await self._save_lofi_state(guild_id)
 
             elif config.get('vc247_active') and config.get('vc247_channel'):
                 try:
-                    vc_channel = guild.get_channel(config['vc247_channel'])
-                    if not vc_channel:
+                    vc_id = int(config['vc247_channel'])
+                    vc_channel = guild.get_channel(vc_id)
+                    if not vc_channel or not isinstance(vc_channel, discord.VoiceChannel):
+                        print(f'Music: 247 VC {vc_id} not found in guild {guild_id}.')
+                        await self._save_247_state(guild_id, False)
                         continue
-                    node = self._get_best_node()
-                    if not node:
-                        continue
+
+                    existing_vc = guild.voice_client
+                    if existing_vc:
+                        try:
+                            await existing_vc.disconnect(force=True)
+                        except Exception:
+                            pass
+                        await asyncio.sleep(1)
+
                     player = await vc_channel.connect(cls=MusicPlayer, timeout=30.0, self_deaf=True)
                     player.is_247 = True
+
                     if config.get('vc247_text_channel'):
-                        text_channel = guild.get_channel(config['vc247_text_channel'])
+                        text_channel = guild.get_channel(int(config['vc247_text_channel']))
                         if text_channel:
-                            player.ctx = await text_channel.history(limit=1).__anext__()
-                    print(f"Music: Restored 247 session for guild {guild_id}")
+                            player.text_channel_id = int(config['vc247_text_channel'])
+
+                    print(f'Music: ✅ Restored 247 for guild {guild_id} → {vc_channel.name}')
                 except Exception as e:
-                    print(f"Music: Failed to restore 247 for guild {guild_id}: {e}")
+                    print(f'Music: ❌ Failed to restore 247 for guild {guild_id}: {e}')
+                    await self._save_247_state(guild_id, False)
+
+        print('Music: Session restore complete.')
 
     async def _start_nodes(self):
         await self.bot.wait_until_ready()
@@ -441,9 +563,45 @@ class Music(commands.Cog):
     async def before_node_monitor(self):
         await self.bot.wait_until_ready()
 
+    async def _check_music_channel(self, message):
+        config = await self.db.find_one('music_config', {'_id': message.guild.id})
+        if not config or config.get('music_cmd_channel') != message.channel.id:
+            return
+        query = message.content.strip()
+        if not query or query.startswith(('http', '!')):
+            return
+        if not message.author.voice:
+            return
+        ctx = await self.bot.get_context(message)
+        player = await self._ensure_player(ctx)
+        if not player:
+            return
+        tracks = await wavelink.Playable.search(f'ytmsearch:{query}')
+        if not tracks:
+            return
+        track = tracks[0] if isinstance(tracks, list) else tracks.tracks[0]
+        track.extras = {'requester_id': message.author.id}
+        if not player.playing:
+            await player.play(track)
+        else:
+            player.queue.put(track)
+        try:
+            await message.add_reaction(self.bot.e.added_track)
+        except Exception:
+            pass
+
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        if message.author.bot or not message.guild:
+            return
+        await self._check_music_channel(message)
+
     @commands.Cog.listener()
     async def on_wavelink_node_ready(self, payload: wavelink.NodeReadyEventPayload):
         print(f"Lavalink Node '{payload.node.identifier}' ready.")
+        if not self._restored:
+            self._restored = True
+            self.bot.loop.create_task(self._restore_sessions())
 
     @commands.Cog.listener()
     async def on_wavelink_track_start(self, payload: wavelink.TrackStartEventPayload):
@@ -482,7 +640,7 @@ class Music(commands.Cog):
             await asyncio.sleep(20)
 
     async def _update_controller(self, player: MusicPlayer):
-        if not player.current or not player.ctx:
+        if not player.current or not player.text_channel_id:
             return
         try:
             embed = self.bot.embed_manager.generic(description="", title=f"{self.bot.e.now_playing} Now Playing")
@@ -500,8 +658,11 @@ class Music(commands.Cog):
                     else:
                         player.controller_msg = None
             else:
-                player.controller_msg = await player.ctx.send(embed=embed, view=view, file=card)
-                player._last_update = time.time()
+                guild = self.bot.get_guild(player.guild.id) if hasattr(player, 'guild') else None
+                channel = guild.get_channel(player.text_channel_id) if guild else None
+                if channel:
+                    player.controller_msg = await channel.send(embed=embed, view=view, file=card)
+                    player._last_update = time.time()
         except Exception as e:
             print(f"Music: Controller update error: {e}")
 
@@ -573,14 +734,27 @@ class Music(commands.Cog):
         if not node:
             await ctx.error("All music nodes are currently offline.")
             return None
-        player = self._get_player(ctx)
+        existing = ctx.voice_client
+        if existing and not isinstance(existing, wavelink.Player):
+            await self._stop_lofi_internal(ctx.guild.id)
+            try:
+                await existing.disconnect(force=True)
+            except Exception:
+                pass
+            existing = None
+        player = existing
         if not player:
             try:
                 player = await ctx.author.voice.channel.connect(cls=MusicPlayer, timeout=30.0, self_deaf=True)
-                player.ctx = ctx
+                player.text_channel_id = ctx.channel.id
             except Exception as e:
                 await ctx.error(f"Failed to connect: {e}")
                 return None
+        elif player.channel != ctx.author.voice.channel:
+            await ctx.error("Join my voice channel first.")
+            return None
+        if not player.text_channel_id:
+            player.text_channel_id = ctx.channel.id
         return player
 
     def _fmt_ms(self, ms):
@@ -606,6 +780,8 @@ class Music(commands.Cog):
             for t in tracks.tracks:
                 t.extras = {"requester_id": ctx.author.id}
                 player.queue.put(t)
+            if not player.playing:
+                await player.play(player.queue.get())
             await ctx.success(f"{self.bot.e.added_track} Added playlist **{tracks.name}** — `{len(tracks.tracks)}` tracks.")
         else:
             track = tracks[0]
@@ -761,8 +937,17 @@ class Music(commands.Cog):
             return await ctx.error("No results found.")
 
         results = tracks[:10] if isinstance(tracks, list) else tracks.tracks[:10]
+        def fmt_dur(ms):
+            s = int((ms or 0) / 1000)
+            m, s = divmod(s, 60)
+            return f"{m}:{s:02d}"
         options = [
-            discord.SelectOption(label=f"{i+1}. {t.title[:80]}", value=str(i), emoji=self.bot.e.music_note)
+            discord.SelectOption(
+                label=f"{i+1}. {t.title[:80]}",
+                value=str(i),
+                description=f"{t.author[:40]} • {fmt_dur(t.length)}",
+                emoji=self.bot.e.music_note
+            )
             for i, t in enumerate(results)
         ]
 

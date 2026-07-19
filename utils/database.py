@@ -17,6 +17,72 @@ class DatabaseEncoder(json.JSONEncoder):
         return super().default(obj)
 
 class DatabaseManager:
+    GUILD_TABLES = [
+        ('guild_prefixes', 'id BIGINT'),
+        ('premium_keys', 'key_str VARCHAR(255)'),
+        ('guild_premium', 'id BIGINT'),
+        ('no_prefix_users', 'id VARCHAR(50)'),
+        ('guild_assignments', 'id BIGINT'),
+        ('social_stats', 'id VARCHAR(100)'),
+        ('mod_cases', 'id VARCHAR(100)'),
+        ('mod_config', 'id BIGINT'),
+        ('logging_config', 'id BIGINT'),
+        ('verification_config', 'id BIGINT'),
+        ('voicemaster_config', 'id BIGINT'),
+        ('voicemaster_channels', 'id BIGINT'),
+        ('automod_config', 'id BIGINT'),
+        ('greetings_config', 'id BIGINT'),
+        ('autorole_config', 'id BIGINT'),
+        ('afk_users', 'id VARCHAR(100)'),
+        ('afk_config', 'id BIGINT'),
+        ('afk_prefs', 'id BIGINT'),
+        ('ticket_config', 'id BIGINT'),
+        ('active_tickets', 'id BIGINT'),
+        ('active_tickets_count', 'id VARCHAR(100)'),
+        ('booster_config', 'id BIGINT'),
+        ('booster_users', 'id VARCHAR(100)'),
+        ('leveling_config', 'id BIGINT'),
+        ('users_xp', 'id VARCHAR(100)'),
+        ('customization_config', 'id BIGINT'),
+        ('giveaways', 'id BIGINT'),
+        ('suggestions_config', 'id BIGINT'),
+        ('suggestions', 'id BIGINT'),
+        ('starboard_config', 'id BIGINT'),
+        ('starboard_messages', 'id BIGINT'),
+        ('app_configs', 'id BIGINT'),
+        ('submitted_apps', 'id BIGINT'),
+        ('ss_checker_config', 'id BIGINT'),
+        ('ss_hashes', 'id VARCHAR(100)'),
+        ('music_config', 'id BIGINT'),
+        ('user_playlists', 'id BIGINT'),
+        ('invite_config', 'id BIGINT'),
+        ('invite_data', 'id VARCHAR(100)'),
+        ('joined_members_map', 'id VARCHAR(100)'),
+        ('status_reward_config', 'id BIGINT'),
+        ('status_reward_data', 'id VARCHAR(100)'),
+        ('social_alerts', 'id BIGINT'),
+        ('stats_config', 'id BIGINT'),
+        ('antinuke_config', 'id BIGINT'),
+        ('custom_commands', 'id BIGINT'),
+        ('reaction_roles', 'id BIGINT'),
+        ('polls', 'id BIGINT'),
+        ('bump_config', 'id BIGINT'),
+        ('birthday_config', 'id BIGINT'),
+        ('birthdays', 'id VARCHAR(100)'),
+        ('counting_config', 'id BIGINT'),
+        ('confession_config', 'id BIGINT'),
+        ('scheduled_messages', 'id VARCHAR(200)'),
+        ('mod_notes', 'id VARCHAR(100)'),
+        ('sticky_messages', 'id BIGINT'),
+        ('reminders', 'id BIGINT'),
+        ('todos', 'id BIGINT'),
+        ('reputation', 'id VARCHAR(100)'),
+        ('reputation_config', 'id BIGINT'),
+        ('saved_quotes', 'id BIGINT'),
+        ('server_analytics', 'id BIGINT'),
+        ('user_weather', 'id BIGINT'),
+    ]
+
     def __init__(self, config: Config):
         self.config = config
         self.mongodb_clusters = {}
@@ -44,7 +110,110 @@ class DatabaseManager:
         if self.sqlite_conn is not None:
             await self._setup_sql_tables('sqlite')
 
+        if self.sqlite_conn is not None:
+            import asyncio
+            asyncio.create_task(self._run_sync_tasks())
+
         logger.info(f'All database connections initialized. Primary storage: {self.primary_type}')
+
+    async def _run_sync_tasks(self):
+        if self.primary_type == 'mongodb' and getattr(self.config, 'AUTO_HYDRATE_SQLITE', True):
+            await self._hydrate_sqlite_from_mongo()
+        if self.mongodb_clusters and getattr(self.config, 'AUTO_REVERSE_SYNC', True):
+            await self._reverse_sync_mongo_from_sqlite()
+
+    async def _hydrate_sqlite_from_mongo(self):
+        logger.info('Checking SQLite for empty tables to hydrate from MongoDB...')
+        hydrated_tables = 0
+        hydrated_docs = 0
+
+        for name, _ in self.GUILD_TABLES:
+            if name == 'guild_assignments':
+                continue
+            try:
+                count_row = await self.sqlite_fetchone(f'SELECT COUNT(*) FROM {name}')
+                count = count_row[0] if count_row else 0
+                if count > 0:
+                    continue
+
+                docs = await self.find(name, {})
+                if not docs:
+                    continue
+
+                for doc in docs:
+                    id_val = doc.get('_id')
+                    if id_val is None:
+                        continue
+                    try:
+                        json_data = json.dumps(doc, cls=DatabaseEncoder)
+                        if name == 'premium_keys':
+                            key_val = doc.get('key') or id_val
+                            q = f'INSERT OR REPLACE INTO {name} (key_str, data) VALUES (?, ?)'
+                            await self.sqlite_execute(q, (key_val, json_data))
+                        else:
+                            q = f'INSERT OR REPLACE INTO {name} (id, data) VALUES (?, ?)'
+                            await self.sqlite_execute(q, (id_val, json_data))
+                        hydrated_docs += 1
+                    except Exception as e:
+                        logger.warning(f"Hydration: failed to insert doc into '{name}': {e}")
+
+                hydrated_tables += 1
+                logger.info(f"Hydrated SQLite table '{name}' with {len(docs)} document(s) from MongoDB.")
+            except Exception as e:
+                logger.warning(f"Hydration: failed to process table '{name}': {e}")
+
+        if hydrated_tables:
+            logger.info(f'SQLite hydration complete: {hydrated_docs} document(s) across {hydrated_tables} table(s).')
+        else:
+            logger.info('SQLite hydration skipped: all tables already have data or MongoDB had nothing to offer.')
+
+    async def _reverse_sync_mongo_from_sqlite(self):
+        logger.info('Checking SQLite for data missing in MongoDB...')
+        synced_tables = 0
+        synced_docs = 0
+
+        for name, _ in self.GUILD_TABLES:
+            if name in ('guild_assignments', 'premium_keys'):
+                continue
+            try:
+                id_col = 'id'
+                rows = await self.sqlite_execute_all(f'SELECT {id_col}, data FROM {name}')
+                if not rows:
+                    continue
+
+                table_synced = 0
+                for id_val, raw_data in rows:
+                    try:
+                        doc = json.loads(raw_data)
+                        if '_id' not in doc:
+                            doc['_id'] = id_val
+
+                        guild_id = self._resolve_guild_id(name, {'_id': id_val})
+                        cluster_name = await self.get_cluster_name(guild_id)
+                        db = self.get_db(cluster_name)
+                        if db is None:
+                            continue
+
+                        existing = await db[name].find_one({'_id': doc['_id']})
+                        if existing:
+                            continue
+
+                        await db[name].update_one({'_id': doc['_id']}, {'$set': doc}, upsert=True)
+                        table_synced += 1
+                        synced_docs += 1
+                    except Exception as e:
+                        logger.warning(f"Reverse sync: failed to push doc into MongoDB '{name}': {e}")
+
+                if table_synced:
+                    synced_tables += 1
+                    logger.info(f"Reverse synced {table_synced} document(s) from SQLite into MongoDB table '{name}'.")
+            except Exception as e:
+                logger.warning(f"Reverse sync: failed to process table '{name}': {e}")
+
+        if synced_tables:
+            logger.info(f'Reverse sync complete: {synced_docs} document(s) pushed to MongoDB across {synced_tables} table(s).')
+        else:
+            logger.info('Reverse sync skipped: MongoDB already has everything SQLite has, or SQLite was empty.')
 
     async def _init_mongodb(self):
         for name, url in self.config.MONGODB_CLUSTERS.items():
@@ -130,11 +299,13 @@ class DatabaseManager:
 
     async def find_one(self, collection: str, query: dict):
         guild_id = self._resolve_guild_id(collection, query)
+        mongo_reachable = False
         if self.primary_type == 'mongodb':
             try:
                 cluster_name = await self.get_cluster_name(guild_id)
                 db = self.get_db(cluster_name)
                 if db is not None:
+                    mongo_reachable = True
                     res = await db[collection].find_one(query)
                     if res:
                         return res
@@ -152,10 +323,25 @@ class DatabaseManager:
                 item = json.loads(res[1])
                 if '_id' not in item:
                     item['_id'] = res[0]
+                if mongo_reachable and self.primary_type == 'mongodb':
+                    import asyncio
+                    asyncio.create_task(self._repair_mongo_doc(collection, item))
                 return item
         except Exception as e:
             logger.warning(f"SQLite find_one error on '{collection}': {e}")
         return None
+
+    async def _repair_mongo_doc(self, collection: str, doc: dict):
+        try:
+            guild_id = self._resolve_guild_id(collection, {'_id': doc.get('_id')})
+            cluster_name = await self.get_cluster_name(guild_id)
+            db = self.get_db(cluster_name)
+            if db is None:
+                return
+            await db[collection].update_one({'_id': doc.get('_id')}, {'$set': doc}, upsert=True)
+            logger.info(f"Repaired MongoDB '{collection}' doc '{doc.get('_id')}' from SQLite (was missing upstream).")
+        except Exception as e:
+            logger.warning(f"Failed to repair MongoDB '{collection}' doc from SQLite: {e}")
 
     async def update_one(self, collection: str, query: dict, update: dict, upsert: bool = False):
         guild_id = self._resolve_guild_id(collection, query)
@@ -373,68 +559,12 @@ class DatabaseManager:
             return await cursor.fetchall()
 
     async def _setup_sql_tables(self, db_type):
-        queries = [
-            'CREATE TABLE IF NOT EXISTS guild_prefixes (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS premium_keys (key_str VARCHAR(255) PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS guild_premium (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS no_prefix_users (id VARCHAR(50) PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS guild_assignments (id BIGINT PRIMARY KEY, cluster VARCHAR(50))',
-            'CREATE TABLE IF NOT EXISTS social_stats (id VARCHAR(100) PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS mod_cases (id VARCHAR(100) PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS mod_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS logging_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS verification_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS voicemaster_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS voicemaster_channels (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS automod_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS greetings_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS autorole_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS afk_users (id VARCHAR(100) PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS afk_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS afk_prefs (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS ticket_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS active_tickets (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS active_tickets_count (id VARCHAR(100) PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS booster_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS booster_users (id VARCHAR(100) PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS leveling_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS users_xp (id VARCHAR(100) PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS customization_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS giveaways (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS suggestions_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS suggestions (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS starboard_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS starboard_messages (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS app_configs (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS submitted_apps (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS ss_checker_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS ss_hashes (id VARCHAR(100) PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS music_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS user_playlists (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS invite_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS invite_data (id VARCHAR(100) PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS joined_members_map (id VARCHAR(100) PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS status_reward_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS status_reward_data (id VARCHAR(100) PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS social_alerts (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS stats_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS antinuke_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS custom_commands (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS reaction_roles (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS polls (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS bump_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS birthday_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS birthdays (id VARCHAR(100) PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS counting_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS confession_config (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS scheduled_messages (id VARCHAR(200) PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS mod_notes (id VARCHAR(100) PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS sticky_messages (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS reminders (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS todos (id BIGINT PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS reputation (id VARCHAR(100) PRIMARY KEY, data TEXT)',
-            'CREATE TABLE IF NOT EXISTS reputation_config (id BIGINT PRIMARY KEY, data TEXT)',
-        ]
+        queries = []
+        for name, pk in self.GUILD_TABLES:
+            if name == 'guild_assignments':
+                queries.append(f'CREATE TABLE IF NOT EXISTS {name} ({pk} PRIMARY KEY, cluster VARCHAR(50))')
+            else:
+                queries.append(f'CREATE TABLE IF NOT EXISTS {name} ({pk} PRIMARY KEY, data TEXT)')
         for q in queries:
             if db_type == 'mariadb':
                 await self.mariadb_execute(q)

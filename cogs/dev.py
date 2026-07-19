@@ -13,6 +13,18 @@ def is_dev():
         raise commands.NotOwner("This command is restricted to bot developers.")
     return commands.check(predicate)
 
+def is_true_owner():
+    async def predicate(ctx):
+        base_owners = getattr(ctx.bot, '_base_owner_ids', set())
+        if base_owners:
+            if ctx.author.id in base_owners:
+                return True
+            raise commands.NotOwner("This command is restricted to the actual bot owner, not devs.")
+        if await ctx.bot.is_owner(ctx.author):
+            return True
+        raise commands.NotOwner("This command is restricted to the actual bot owner, not devs.")
+    return commands.check(predicate)
+
 class DevCog(commands.Cog):
     category = "dev"
 
@@ -21,24 +33,26 @@ class DevCog(commands.Cog):
         self.prefix_manager = bot.prefix_manager
 
     @commands.command(name='adddev', help='Add a user to the developers list (Owner Only).')
-    @commands.is_owner()
+    @is_true_owner()
     async def add_developer(self, ctx, user: discord.User):
         if user.id in self.bot.dev_manager.dev_ids:
             return await ctx.warning(f"{user.mention} is already a developer.")
         self.bot.dev_manager.dev_ids.add(user.id)
         with open(self.bot.dev_manager.file_path, 'w') as f:
             json.dump({"dev_ids": list(self.bot.dev_manager.dev_ids)}, f, indent=4)
-        await ctx.success(f"Added {user.mention} to the developer list.")
+        await self.bot.refresh_owner_ids()
+        await ctx.success(f"Added {user.mention} to the developer list. They now have jsk access.")
 
     @commands.command(name='removedev', help='Remove a user from the developers list (Owner Only).')
-    @commands.is_owner()
+    @is_true_owner()
     async def remove_developer(self, ctx, user: discord.User):
         if user.id not in self.bot.dev_manager.dev_ids:
             return await ctx.warning(f"{user.mention} is not in the developer list.")
         self.bot.dev_manager.dev_ids.remove(user.id)
         with open(self.bot.dev_manager.file_path, 'w') as f:
             json.dump({"dev_ids": list(self.bot.dev_manager.dev_ids)}, f, indent=4)
-        await ctx.success(f"Removed {user.mention} from the developer list.")
+        await self.bot.refresh_owner_ids()
+        await ctx.success(f"Removed {user.mention} from the developer list. Their jsk access has been revoked.")
 
     @commands.command(name='devlist', help='List all bot developers.')
     @is_dev()
@@ -75,7 +89,7 @@ class DevCog(commands.Cog):
         await ctx.embed("\n".join(user_mentions), title="No-Prefix Allowed Users")
 
     @commands.command(name='shutdown', aliases=['stop'], help='Shutdown the bot (Owner Only).')
-    @commands.is_owner()
+    @is_true_owner()
     async def shutdown(self, ctx):
         await ctx.success("Shutting down... Goodbye!", title="Shutdown")
         await self.bot.close()
@@ -87,14 +101,18 @@ class DevCog(commands.Cog):
         await ctx.success("Restarting... Please wait.", title="Restart")
         os.execv(sys.executable, ['python'] + sys.argv)
 
-    @commands.command(name='jishaku', aliases=['jsk'], help='Load the jishaku extension (Devs/Owner).')
+    @commands.command(name='jishakureload', aliases=['jskreload'], help='Reload the jishaku extension after an update (Devs/Owner).')
     @is_dev()
-    async def load_jishaku(self, ctx):
+    async def reload_jishaku(self, ctx):
         try:
-            await self.bot.load_extension('jishaku')
-            await ctx.success("Jishaku has been loaded successfully.")
+            if 'jishaku' in self.bot.extensions:
+                await self.bot.reload_extension('jishaku')
+                await ctx.success('Jishaku has been reloaded.')
+            else:
+                await self.bot.load_extension('jishaku')
+                await ctx.success('Jishaku was not loaded — it has been loaded now.')
         except Exception as e:
-            await ctx.error(f"Failed to load jishaku: {e}")
+            await ctx.error(f'Failed to reload jishaku: {e}')
 
 async def setup(bot):
     await bot.add_cog(DevCog(bot))

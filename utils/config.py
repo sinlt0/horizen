@@ -9,14 +9,9 @@ class Config:
                                    
                                                        
     MONGODB_CLUSTERS = {
-        "primary": "mongodb+srv://codex:codex@cdx-in-1.0idu7ol.mongodb.net/?appName=cdx-in-1",
-        "asia_in_2": "mongodb+srv://codex:codex@cdx-in-2.nvi4kep.mongodb.net/?appName=cdx-in-2",
-        "us_east_1": "mongodb+srv://codex:codex@cdx-us-1.zunskft.mongodb.net/?appName=cdx-us-1",
-        "asia_mumbai": "mongodb+srv://AeroX:AeroX@aerox.rv3nxmb.mongodb.net/?retryWrites=true&w=majority&appName=AeroX",
-        "europe_frankfurt": "mongodb+srv://AeroX:AeroX@aerox.hae9rfp.mongodb.net/?retryWrites=true&w=majority&appName=AeroX",
-        "asia_singapore": "mongodb+srv://AeroX:AeroX@aerox.cgfxn4x.mongodb.net/?retryWrites=true&w=majority&appName=AeroX",
-        "asia_tokyo": "mongodb+srv://AeroX:AeroX@aerox.cgvmit4.mongodb.net/?retryWrites=true&w=majority&appName=AeroX",
-
+        "primary": "mongodb+srv://CodeX:CodeX@codex-in1.ito65ix.mongodb.net/?appName=CodeX-in1",
+        "asia_in_2": "mongodb+srv://CodeX:CodeX@codex-in2.4cnbbw7.mongodb.net/?appName=CodeX-in2",
+        "us_east_1": "mongodb+srv://CodeX:CodeX@codex-in3.evr1nui.mongodb.net/?appName=CodeX-in3",
     }
     MONGODB_DB_NAME = os.getenv('MONGODB_DB_NAME', 'discord_bot')
 
@@ -39,6 +34,8 @@ class Config:
 
                     
     DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 't')
+    AUTO_HYDRATE_SQLITE = os.getenv('AUTO_HYDRATE_SQLITE', 'True').lower() in ('true', '1', 't')
+    AUTO_REVERSE_SYNC = os.getenv('AUTO_REVERSE_SYNC', 'True').lower() in ('true', '1', 't')
     EMBED_COLOR = 0x4A3F5F
     HIDDEN_CATEGORIES = ['dev', 'premium', 'owner', 'collection']
     
@@ -80,12 +77,22 @@ class Config:
     ]
 
     LOFI_STATIONS = {
-        "Groove Salad (Ambient/Downtempo)": "https://ice.somafm.com/groovesalad",
-        "Drone Zone (Atmospheric)": "https://ice.somafm.com/dronezone",
-        "Groove Salad Classic (2000s Chill)": "https://ice.somafm.com/gsclassic",
-        "Space Station Soma (Ambient Electronic)": "https://ice.somafm.com/spacestation",
-        "Deep Space One (Experimental)": "https://ice.somafm.com/deepspaceone",
-        "Beat Blender (Deep House/Downtempo)": "https://ice.somafm.com/beatblender",
-        "Chillhop (Lofi Hip-Hop)": "http://streams.fluxfm.de/Chillhop/mp3-128/streams.fluxfm.de/",
-        "FluxLounge (Chillout)": "http://streams.fluxfm.de/lounge/mp3-128/audio/",
+        "Groove Salad (Ambient/Downtempo)": "https://ice.somafm.com/groovesalad-128-mp3",
+        "Drone Zone (Atmospheric/Ambient)": "https://ice.somafm.com/dronezone-128-mp3",
+        "Lush (Sensuous Ambient)": "https://ice.somafm.com/lush-128-mp3",
+        "Digitalis (Ambient/Electronica)": "https://ice.somafm.com/digitalis-128-mp3",
+        "Fluid (Downtempo/Liquid)": "https://ice.somafm.com/fluid-128-mp3",
+        "Groove Salad Classic (Early Chill)": "https://ice.somafm.com/gsclassic-128-mp3",
+        "Deep Space One (Deep Ambient)": "https://ice.somafm.com/deepspaceone-128-mp3",
+        "DEF CON Radio (Hacker/Electronic)": "https://ice.somafm.com/defcon-128-mp3",
+        "Space Station Soma (Spaced-out Ambient)": "https://ice.somafm.com/spacestation-128-mp3",
+        "Beat Blender (Deep House/Chill)": "https://ice.somafm.com/beatblender-128-mp3",
+        "Suburbs of Goa (Desi-Chilled Beats)": "https://ice.somafm.com/suburbsofgoa-128-mp3",
+        "Secret Agent (Mellow Cinematic Lounge)": "https://ice.somafm.com/secretagent-128-mp3",
+        "Chillsky (Lofi Hip-Hop Main)": "https://lfhh.radioca.st/stream",
+        "Chillsky Lite (Mellow Study Beats)": "https://lfhh.radioca.st/stream2",
+        "HearMe Lofi (Vinyl Crackle/Relax)": "http://radio.hearme.fm:8366/stream",
+        "Radio Paradise (Mellow Mix)": "https://stream.radioparadise.com/mellow-128",
+        "Radio Paradise (Chill Mix)": "https://stream.radioparadise.com/chill-128",
     }
+    

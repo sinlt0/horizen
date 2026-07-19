@@ -21,6 +21,8 @@ class DevManager:
             print(f'Failed to load devs.json: {e}')
 
     def is_dev(self, user_id: int, bot):
-        if user_id == bot.owner_id:
+        if user_id == getattr(bot, 'owner_id', None):
+            return True
+        if user_id in getattr(bot, 'owner_ids', set()):
             return True
         return user_id in self.dev_ids

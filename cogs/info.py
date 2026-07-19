@@ -149,7 +149,7 @@ class Information(commands.Cog):
         
         embed.add_field(name=f"{ctx.e.server} Guilds", value=f"`{len(self.bot.guilds)}`", inline=True)
         embed.add_field(name=f"{ctx.e.members} Total Users", value=f"`{sum(g.member_count for g in self.bot.guilds)}`", inline=True)
-        embed.add_field(name=f"{ctx.e.commands} Commands", value=f"`{len(self.bot.commands)}`", inline=True)
+        embed.add_field(name=f"{ctx.e.commands} Commands", value=f"`{self.bot.count_all_commands()}`", inline=True)
         
         db_type = self.bot.db_manager.primary_type.upper() if self.bot.db_manager else "UNKNOWN"
         embed.add_field(name=f"{ctx.e.database} Database", value=f"`{db_type}`", inline=True)
